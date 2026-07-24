@@ -1,0 +1,45 @@
+# STM32CubeIDE build output
+Debug/
+Release/
+build/
+*.elf
+*.hex
+*.bin
+*.map
+*.list
+*.su
+*.cyclo
+*.d
+*.o
+
+# STM32CubeIDE local metadata
+.metadata/
+*.launch
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Raw measurements can become extremely large
+results/raw/*
+!results/raw/.gitkeep
+
+# Temporary files
+*.tmp
+*.log
