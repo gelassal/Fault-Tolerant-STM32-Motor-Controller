@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "command_console.h"
 #include "motor_driver.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -143,6 +144,13 @@ int main(void)
   /* Remain safely disabled until hardware is connected and tested. */
   MotorDriver_Disable();
 
+  if (!CommandConsole_Init(&huart2))
+  {
+      Error_Handler();
+  }
+
+  uint32_t last_led_toggle_ms = HAL_GetTick();
+
   /* USER CODE END 2 */
 
   /* Initialize leds */
@@ -155,14 +163,20 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-    HAL_Delay(500);
+    CommandConsole_Process();
+
+    if ((HAL_GetTick() - last_led_toggle_ms) >= 500U)
+    {
+      last_led_toggle_ms = HAL_GetTick();
+      HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+    }
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
-}
+  }
 
 /**
   * @brief System Clock Configuration
@@ -421,6 +435,12 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+void HAL_UART_RxCpltCallback(
+    UART_HandleTypeDef *huart)
+{
+    CommandConsole_OnRxComplete(huart);
+}
 
 /* USER CODE END 4 */
 
