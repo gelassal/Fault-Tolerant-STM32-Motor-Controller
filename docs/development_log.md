@@ -199,3 +199,99 @@ TB9051FTG H-bridge while keeping all physical motor outputs safely disabled.
 Calculate matching 20 kHz settings for TIM4 and TIM8, verify both PWM outputs
 with an oscilloscope, and order the motor, TB9051FTG driver, power, fuse,
 cutoff, and wiring components required for the first hardware bring-up.
+
+### 2026-08-04 — Dual-PWM Configuration and Interrupt-Driven UART Console
+
+**Goal**
+
+Configure both motor-control PWM outputs for the same 20 kHz switching
+frequency and implement a modular UART interface for controlling and inspecting
+the motor driver.
+
+**Work Completed**
+
+- Confirmed that both the APB1 timer clock used by TIM4 and the APB2 timer
+  clock used by TIM8 were configured to 84 MHz.
+- Used the PWM frequency relationship:
+
+  `PWM frequency = timer clock / ((prescaler + 1) × (period + 1))`
+
+- Configured both TIM4 and TIM8 with:
+  - Prescaler: `0`
+  - Counter period: `4199`
+  - Initial pulse: `0`
+- Verified that these settings produce a calculated PWM frequency of:
+
+  `84,000,000 / (1 × 4200) = 20,000 Hz`
+
+- Configured:
+  - `TIM4_CH1` on PB6 as PWM1
+  - `TIM8_CH2` on PC7 as PWM2
+- Used debugger register inspection to validate duty-cycle conversion and
+  direction routing.
+- Confirmed approximately:
+  - 25% duty produced CCR = `1049`
+  - 50% duty produced CCR = `2099`
+  - 100% duty produced CCR = `4199`
+- Confirmed duty commands below 0% were clamped to 0% and commands above 100%
+  were clamped to 100%.
+- Confirmed forward operation placed PWM on `TIM4->CCR1` while
+  `TIM8->CCR2` remained zero.
+- Confirmed reverse operation placed PWM on `TIM8->CCR2` while
+  `TIM4->CCR1` remained zero.
+- Confirmed that changing direction cleared the previous duty command and that
+  disabling the driver returned both compare registers to zero.
+- Enabled the USART2 global interrupt.
+- Added `command_console.c` and `command_console.h`.
+- Implemented interrupt-driven, one-byte UART reception using
+  `HAL_UART_Receive_IT()`.
+- Buffered received characters until a complete command was entered.
+- Kept command parsing, UART transmission, and motor-control operations outside
+  the UART interrupt callback.
+- Added `enable`, `disable`, `forward`, `reverse`, `duty`, `brake`, `status`,
+  and `help` commands.
+- Added command validation and prevented nonzero duty commands while the motor
+  driver was disabled.
+- Added support for CR, LF, and CR+LF terminal line endings.
+- Replaced the blocking LED delay with nonblocking `HAL_GetTick()` timing.
+
+**Observations**
+
+- Both PWM peripherals use an 84 MHz timer clock, allowing TIM4 and TIM8 to use
+  identical prescaler and period settings.
+- Debugger inspection confirmed the expected compare-register values for
+  forward, reverse, clamped duty, direction changes, and disable operations.
+- Physical 20 kHz waveform verification has not yet been performed with an
+  oscilloscope.
+- The CubeIDE serial console did not display characters through local echo, so
+  the firmware echoes each completed command after Enter is pressed.
+- Commands were successfully received and executed through the ST-LINK virtual
+  COM port at 115200 baud.
+- Debugger inspection confirmed that UART commands correctly updated
+  `TIM4->CCR1`, `TIM8->CCR2`, driver enable state, direction, and stored duty.
+
+**Problems**
+
+- Physical PWM waveform validation remains pending because the oscilloscope is
+  not currently available.
+- Motor-driver and motor hardware testing remains pending because the external
+  components have not yet arrived.
+
+**Decisions**
+
+- Both PWM channels will operate at 20 kHz to keep the switching frequency
+  consistent across forward and reverse operation and above the most audible
+  frequency range.
+- PWM timers will remain running continuously while duty is controlled through
+  their compare registers.
+- Normal startup will keep both compare registers at zero and the motor driver
+  disabled.
+- UART functionality remains isolated in the command-console module. The motor
+  driver has no dependency on UART, allowing the same API to be reused later by
+  CAN communication and FreeRTOS tasks.
+
+**Next Step**
+
+Verify the TIM4_CH1 and TIM8_CH2 outputs as 20 kHz signals using an oscilloscope,
+then begin TB9051FTG logic-level hardware bring-up after the required components
+arrive.
