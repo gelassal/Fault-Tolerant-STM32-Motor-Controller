@@ -1,72 +1,107 @@
 # Fault-Tolerant STM32 Motor-Control Platform
 
-A real-time motor-control platform built around an STM32 microcontroller,
-quadrature encoder feedback, current sensing, CAN communication, fault
-detection, and automated Python hardware-in-the-loop testing.
+A safety-oriented brushed-DC motor controller built on the STM32F446RE. The
+project is intended to demonstrate professional embedded-firmware architecture,
+hardware bring-up, real-time control, fault handling, communication, and
+automated validation using measured results.
 
-## Project Status
+## Current Status
 
-Current phase: Hardware selection and controller bring-up.
+The current milestone integrates and validates the open-loop safety layer before
+external motor hardware is powered.
 
-The initial milestone is a single STM32 controlling an encoded DC motor with:
+Completed in firmware:
 
-- PWM and direction control
-- Quadrature encoder measurement
-- Motor-current measurement
-- Closed-loop speed control
-- UART telemetry
-- Safe startup and fault handling
+- NUCLEO-F446RE board, debugger, LED, and USART2 bring-up
+- Interrupt-driven UART command console at 115200 baud
+- TIM4_CH1 and TIM8_CH2 dual-PWM outputs configured for a calculated 20 kHz
+- Low-level TB9051FTG motor-driver abstraction
+- High-level disabled, ready, running, braking, and fault state machine
+- READY and brake-release semantics that leave the H-bridge disabled to coast
+- Direction interlock, latched faults, explicit fault clearing, and software
+  fault injection
+- Native state-machine regression suite with a mocked motor driver
 
-FreeRTOS, CAN communication, and hardware-in-the-loop automation will be
-introduced after the basic motor-control hardware has been validated.
+Verified on 2026-08-07:
 
-## Planned Hardware
+- All 147 native motor-controller assertions passed with `-Wall -Wextra
+  -Werror -pedantic`.
+- The STM32 Debug firmware built and linked with zero warnings.
+- Image size: 26,952 bytes text, 100 bytes initialized data, and 2,260 bytes BSS.
 
-- STM32 NUCLEO-G474RE
-- 12 V brushed DC gearmotor with quadrature encoder
-- TB9051FTG motor-driver carrier
-- ACS724 current-sensor carrier
-- USB-to-CAN interface
-- Current-limited 12 V power supply
+Not yet physically verified:
 
-## Planned Capabilities
+- PWM frequency and duty cycle with an oscilloscope
+- Soldered TB9051FTG carrier and logic wiring
+- Powered driver behavior
+- First motor spin
+- Encoder feedback, current sensing, closed-loop control, FreeRTOS, CAN, and HIL
 
-- 1 kHz closed-loop speed controller
-- FreeRTOS task-based firmware architecture
-- Interrupt-driven quadrature encoder measurement
-- ADC and DMA current sampling
-- CAN command and telemetry protocol
-- Overcurrent, stall, encoder, command, and communication fault detection
-- Hardware watchdog supervision
-- Python hardware-in-the-loop tests
-- Automated build, unit-test, formatting, and static-analysis checks
+## Hardware
 
-## Repository Structure
+- ST NUCLEO-F446RE
+- Pololu #2997 TB9051FTG single brushed-DC motor-driver carrier
+- Pololu #4866 75:1 MP 12 V 25D gearmotor with 48 CPR encoder
+- Protected, current-limited 12 V bench supply and physical cutoff (required
+  before powered testing)
 
-- `firmware/control_node/` — STM32 motor-controller firmware
-- `host_tools/` — Python telemetry, plotting, and command utilities
-- `tests/` — Firmware and host-side automated tests
-- `docs/` — Requirements, architecture, wiring, and test documentation
-- `results/` — Curated measurements, plots, and validation reports
-- `.github/workflows/` — Continuous-integration workflows
+See [docs/wiring.md](docs/wiring.md) for the exact pin map, equipment gate, and
+staged bring-up procedure.
 
-## Development Phases
+## Architecture
 
-1. Basic motor and sensor bring-up
-2. Closed-loop speed control
-3. FreeRTOS migration and timing analysis
-4. CAN communication
-5. Fault-tolerance validation
-6. Python hardware-in-the-loop automation
-7. Optional custom PCB and bootloader
+UART commands pass through `motor_controller`, which enforces application
+policy before using the low-level `motor_driver`. The console cannot directly
+enable the H-bridge or change PWM.
 
-## Safety
+```text
+USART2 interrupt -> command buffer -> command parser
+                                      |
+                                      v
+                               motor_controller
+                                      |
+                                      v
+                                 motor_driver
+                                      |
+                                      v
+                         GPIO + PWM + TB9051FTG
+```
 
-The motor must start in a disabled state after reset. Motor power will pass
-through a fuse and physical cutoff switch. High-current motor wiring will not
-be routed through a solderless breadboard.
+The current synchronous main loop is intentional. Encoder feedback and
+closed-loop behavior will be validated before the application is migrated to
+FreeRTOS tasks.
 
-## Results
+## Native Tests
 
-Measured performance results will be added after validation. No performance
-numbers will be reported until they have been reproduced and documented.
+From `tests/motor_controller`:
+
+```powershell
+mingw32-make run
+```
+
+The tests compile the production controller against a fake driver and verify
+legal and illegal transitions, coast/brake behavior, safe duty sequencing,
+diagnostic and software faults, low-level failures, fault latching, and fault
+clearing.
+
+## Long-Term Target
+
+The resume-ready target is an encoder-based 1 kHz closed-loop controller with
+FreeRTOS timing measurements, ADC/DMA current monitoring, CAN commands and
+telemetry, multiple detected fault conditions, Python HIL automation, CI, and
+recorded performance data. A custom carrier PCB and bootloader remain optional
+stretch goals after the development-board system is validated.
+
+## Safety and Measurement Policy
+
+- Reset, disable, and fault states must force zero PWM and disable the driver.
+- READY means armed but electrically coasting; BRAKING is the deliberate
+  short-brake state.
+- Never connect 12 V to a Nucleo logic or 5 V pin.
+- Do not use Dupont wires or a solderless breadboard for motor current.
+- Do not power the motor until the equipment checklist and motor-disconnected
+  tests pass.
+- Do not publish performance claims without saved test records.
+
+Measured scope captures and motor results will be added only after the physical
+tests are completed.

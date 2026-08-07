@@ -1,6 +1,6 @@
 #include "command_console.h"
 
-#include "motor_driver.h"
+#include "motor_controller.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -110,34 +110,98 @@ static void ConvertToLowercase(char *text)
 }
 
 
+static const char *ControllerStateToString(
+    MotorControllerState_t state)
+{
+    switch (state)
+    {
+        case MOTOR_CONTROLLER_STATE_UNINITIALIZED:
+            return "uninitialized";
+
+        case MOTOR_CONTROLLER_STATE_DISABLED:
+            return "disabled";
+
+        case MOTOR_CONTROLLER_STATE_READY:
+            return "ready";
+
+        case MOTOR_CONTROLLER_STATE_RUNNING:
+            return "running";
+
+        case MOTOR_CONTROLLER_STATE_BRAKING:
+            return "braking";
+
+        case MOTOR_CONTROLLER_STATE_FAULT:
+            return "fault";
+
+        default:
+            return "unknown";
+    }
+}
+
+
+static const char *ControllerFaultToString(
+    MotorControllerFault_t fault)
+{
+    switch (fault)
+    {
+        case MOTOR_CONTROLLER_FAULT_NONE:
+            return "none";
+
+        case MOTOR_CONTROLLER_FAULT_DRIVER_DIAGNOSTIC:
+            return "driver_diagnostic";
+
+        case MOTOR_CONTROLLER_FAULT_DRIVER_ERROR:
+            return "driver_error";
+
+        case MOTOR_CONTROLLER_FAULT_SOFTWARE:
+            return "software";
+
+        case MOTOR_CONTROLLER_FAULT_CONTROL_TIMEOUT:
+            return "control_timeout";
+
+        case MOTOR_CONTROLLER_FAULT_ENCODER_LOSS:
+            return "encoder_loss";
+
+        case MOTOR_CONTROLLER_FAULT_OVERCURRENT:
+            return "overcurrent";
+
+        case MOTOR_CONTROLLER_FAULT_OVERSPEED:
+            return "overspeed";
+
+        default:
+            return "unknown";
+    }
+}
+
+
 static void SendMotorStatus(void)
 {
-    char response[128];
+    char response[160];
 
-    const char *enabled_text =
-        MotorDriver_IsEnabled()
-            ? "enabled"
-            : "disabled";
+    const char *state_text =
+        ControllerStateToString(
+            MotorController_GetState()
+        );
+
+    const char *fault_text =
+        ControllerFaultToString(
+            MotorController_GetFault()
+        );
 
     const char *direction_text =
-        MotorDriver_GetDirection() ==
+        MotorController_GetDirection() ==
         MOTOR_DIRECTION_FORWARD
             ? "forward"
             : "reverse";
 
-    const char *fault_text =
-        MotorDriver_IsFaultActive()
-            ? "active"
-            : "none";
-
     int duty_percent =
-        (int)(MotorDriver_GetDuty() + 0.5f);
+        (int)(MotorController_GetDuty() + 0.5f);
 
     (void)snprintf(
         response,
         sizeof(response),
         "STATUS state=%s direction=%s duty=%d fault=%s\r\n",
-        enabled_text,
+        state_text,
         direction_text,
         duty_percent,
         fault_text
@@ -147,37 +211,55 @@ static void SendMotorStatus(void)
 }
 
 
-static void SendMotorStatusResult(
-    MotorStatus_t status,
+static void SendControllerResult(
+    MotorControllerStatus_t status,
     const char *success_message)
 {
     switch (status)
     {
-        case MOTOR_STATUS_OK:
+        case MOTOR_CONTROLLER_STATUS_OK:
             ConsoleWrite(success_message);
             break;
 
-        case MOTOR_STATUS_INVALID_ARGUMENT:
+        case MOTOR_CONTROLLER_STATUS_NOT_INITIALIZED:
+            ConsoleWrite(
+                "ERR controller not initialized\r\n"
+            );
+            break;
+
+        case MOTOR_CONTROLLER_STATUS_INVALID_ARGUMENT:
             ConsoleWrite(
                 "ERR invalid argument\r\n"
             );
             break;
 
-        case MOTOR_STATUS_NOT_INITIALIZED:
+        case MOTOR_CONTROLLER_STATUS_INVALID_STATE:
             ConsoleWrite(
-                "ERR motor driver not initialized\r\n"
+                "ERR command not allowed in current state\r\n"
             );
             break;
 
-        case MOTOR_STATUS_HAL_ERROR:
+        case MOTOR_CONTROLLER_STATUS_DRIVER_ERROR:
             ConsoleWrite(
-                "ERR motor-driver HAL failure\r\n"
+                "ERR low-level motor-driver failure\r\n"
+            );
+            break;
+
+        case MOTOR_CONTROLLER_STATUS_FAULT_ACTIVE:
+            ConsoleWrite(
+                "ERR fault is latched; clear fault first\r\n"
+            );
+            break;
+
+        case MOTOR_CONTROLLER_STATUS_FAULT_STILL_PRESENT:
+            ConsoleWrite(
+                "ERR physical fault is still present\r\n"
             );
             break;
 
         default:
             ConsoleWrite(
-                "ERR unknown motor-driver failure\r\n"
+                "ERR unknown controller failure\r\n"
             );
             break;
     }
@@ -222,26 +304,12 @@ static void HandleDutyCommand(char *argument)
         return;
     }
 
-    /*
-     * Do not preload a nonzero duty while disabled.
-     * This prevents a later enable command from unexpectedly
-     * starting the motor at an old duty value.
-     */
-    if ((duty_percent > 0L) &&
-        (!MotorDriver_IsEnabled()))
-    {
-        ConsoleWrite(
-            "ERR motor is disabled; run enable first\r\n"
-        );
-        return;
-    }
+    MotorControllerStatus_t status =
+        MotorController_SetDuty((float)duty_percent);
 
-    MotorStatus_t status =
-        MotorDriver_SetDuty((float)duty_percent);
-
-    if (status != MOTOR_STATUS_OK)
+    if (status != MOTOR_CONTROLLER_STATUS_OK)
     {
-        SendMotorStatusResult(status, "");
+        SendControllerResult(status, "");
         return;
     }
 
@@ -271,35 +339,34 @@ static void HandleCommand(char *command)
 
     if (strcmp(normalized_command, "enable") == 0)
     {
-        SendMotorStatusResult(
-            MotorDriver_Enable(),
-            "OK motor enabled at 0% duty\r\n"
+        SendControllerResult(
+            MotorController_Enable(),
+            "OK state=ready duty=0 output=coast\r\n"
         );
     }
     else if (strcmp(normalized_command, "disable") == 0)
     {
-        MotorDriver_Disable();
-
-        ConsoleWrite(
-            "OK motor disabled\r\n"
+        SendControllerResult(
+            MotorController_Disable(),
+            "OK state=disabled duty=0\r\n"
         );
     }
     else if (strcmp(normalized_command, "forward") == 0)
     {
-        SendMotorStatusResult(
-            MotorDriver_SetDirection(
+        SendControllerResult(
+            MotorController_SetDirection(
                 MOTOR_DIRECTION_FORWARD
             ),
-            "OK direction=forward; duty reset to 0\r\n"
+            "OK direction=forward\r\n"
         );
     }
     else if (strcmp(normalized_command, "reverse") == 0)
     {
-        SendMotorStatusResult(
-            MotorDriver_SetDirection(
+        SendControllerResult(
+            MotorController_SetDirection(
                 MOTOR_DIRECTION_REVERSE
             ),
-            "OK direction=reverse; duty reset to 0\r\n"
+            "OK direction=reverse\r\n"
         );
     }
     else if (strncmp(
@@ -319,9 +386,32 @@ static void HandleCommand(char *command)
     }
     else if (strcmp(normalized_command, "brake") == 0)
     {
-        SendMotorStatusResult(
-            MotorDriver_Brake(),
+        SendControllerResult(
+            MotorController_Brake(),
             "OK brake active\r\n"
+        );
+    }
+    else if (strcmp(normalized_command, "release") == 0)
+    {
+        SendControllerResult(
+            MotorController_ReleaseBrake(),
+            "OK state=ready duty=0 output=coast\r\n"
+        );
+    }
+    else if (strcmp(normalized_command, "injectfault") == 0)
+    {
+        SendControllerResult(
+            MotorController_ReportFault(
+                MOTOR_CONTROLLER_FAULT_SOFTWARE
+            ),
+            "OK software fault injected; state=fault\r\n"
+        );
+    }
+    else if (strcmp(normalized_command, "clearfault") == 0)
+    {
+        SendControllerResult(
+            MotorController_ClearFault(),
+            "OK fault cleared; state=disabled\r\n"
         );
     }
     else if (strcmp(normalized_command, "status") == 0)
@@ -338,7 +428,10 @@ static void HandleCommand(char *command)
             "  reverse\r\n"
             "  duty <0-100>\r\n"
             "  brake\r\n"
+            "  release\r\n"
             "  status\r\n"
+            "  injectfault\r\n"
+            "  clearfault\r\n"
             "  help\r\n"
         );
     }

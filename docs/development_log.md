@@ -295,3 +295,75 @@ the motor driver.
 Verify the TIM4_CH1 and TIM8_CH2 outputs as 20 kHz signals using an oscilloscope,
 then begin TB9051FTG logic-level hardware bring-up after the required components
 arrive.
+
+---
+
+### 2026-08-07 - Motor Safety State Machine Integration
+
+**Goal**
+
+Place a high-level safety policy between UART commands and the low-level motor
+driver, verify it with native tests, and prepare a gated hardware procedure.
+
+**Work Completed**
+
+- Added `motor_controller` with disabled, ready, running, braking, and fault
+  states plus explicit controller status and fault codes.
+- Defined READY as armed but electrically coasting: the H-bridge remains
+  disabled until nonzero duty or an explicit brake command.
+- Implemented safe motion entry that requests zero duty, enables the driver,
+  checks DIAG, and only then applies nonzero PWM.
+- Made `duty 0` and `release` disable the H-bridge and return to READY/coast.
+- Enforced direction changes only in READY, latched all reported or detected
+  faults, and required explicit clear back to DISABLED.
+- Routed all UART motor commands and status reporting through
+  `MotorController`; added `release`, `injectfault`, and `clearfault`.
+- Split HAL-free motor types and runtime driver declarations from the STM32
+  configuration interface to support native tests.
+- Added a MinGW C test suite with a fake driver and failure injection.
+- Corrected the README, architecture, wiring, and test plan for the actual
+  NUCLEO-F446RE and staged TB9051FTG bring-up.
+
+**Verification**
+
+- All 147 native assertions passed with `-Wall -Wextra -Werror -pedantic`.
+- ARM syntax checks passed for `main.c`, `motor_driver.c`,
+  `motor_controller.c`, and `command_console.c` with warnings treated as
+  errors.
+- The CubeIDE Debug firmware linked successfully with zero warnings.
+- Linked image size was 26,952 bytes text, 100 bytes initialized data, and
+  2,260 bytes BSS.
+
+**Observations**
+
+- The TB9051FTG two-PWM truth table makes both PWM inputs low while enabled a
+  short-brake state. The earlier design's READY and release behavior would
+  therefore have remained actively braking instead of coasting.
+- Native tests confirmed that the controller never preloads nonzero duty while
+  the driver is disabled.
+- The exact Pololu #2997 carrier and #4866 motor are available, and an
+  oscilloscope is available at home.
+
+**Problems / Open Gates**
+
+- UART behavior and STM32 register outputs have not yet been revalidated on the
+  physical Nucleo with the integrated controller.
+- The carrier still requires soldering.
+- A suitable current-limited 12 V supply, 1 A fuse, cutoff, multimeter, wiring,
+  and motor restraint must be confirmed before powered testing.
+- No scope or motor measurements have been recorded yet.
+
+**Decisions**
+
+- Keep the current 20 kHz nominal configuration for the first scope check. If
+  measured frequency exceeds the carrier's 20 kHz limit, change both timers to
+  ARR 4299 for a nominal 19.53 kHz.
+- Keep PB10 pulled up only for carrier-disconnected testing; change it to
+  `GPIO_NOPULL` before wiring the carrier, which provides the DIAG pull-up.
+- Do not connect motor power until host tests, firmware build, MCU-only scope
+  checks, logic-only wiring, and motor-disconnected power checks pass in order.
+
+**Next Step**
+
+Flash the integrated firmware with no carrier connected, run UART-STATE-001,
+and capture the PB6/PC7/EN/ENB waveforms required by SCOPE-PWM-001.

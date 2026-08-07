@@ -1,112 +1,117 @@
-
-Do not guess the exact STM32 pins yet. Select them in CubeMX later, then update the table.
-
----
-
-# 7. Add the initial test plan
-
-```markdown
 # Validation Test Plan
 
 ## Test Record Format
 
-Each completed test shall record:
+Each completed test records the date, firmware commit or worktree state,
+hardware revision, procedure, expected result, actual result, pass/fail status,
+and supporting artifact location. Pending physical tests must not be presented
+as completed measurements.
 
-- Test identifier
-- Date
-- Firmware commit
-- Hardware revision
-- Test procedure
-- Expected result
-- Actual result
-- Pass or fail
-- Supporting log or image location
+## HOST-CTRL-001 - Motor Safety State Machine
 
-## BRINGUP-001 — STM32 LED Test
-
-Requirement: Basic board bring-up
+Requirements: SAFE-001, SAFE-003, SAFE-004
 
 Procedure:
 
-1. Program the STM32.
-2. Toggle the onboard LED every 500 ms.
-3. Reset the board.
-4. Confirm normal operation resumes.
+1. From `tests/motor_controller`, run `mingw32-make run`.
+2. Compile the production controller against the fake driver using `-Wall
+   -Wextra -Werror -pedantic`.
+3. Exercise all legal and illegal transitions, invalid arguments, coast/brake
+   behavior, diagnostic and software faults, driver failures, latching, and
+   fault clearing.
 
-Expected result:
+Expected result: all assertions pass and no nonzero duty is preloaded while the
+driver is disabled.
 
-- Firmware programs successfully.
-- LED toggles at the expected rate.
-- Reset does not cause unexpected behavior.
+Recorded result, 2026-08-07: **PASS - 147 of 147 assertions passed.**
 
-## BRINGUP-002 — UART Boot Message
+## BUILD-001 - STM32 Debug Firmware
 
-Requirements: TLM-001
+Procedure: refresh the CubeIDE managed build and build the Debug configuration.
 
-Procedure:
+Expected result: `control_node.elf` links with `motor_controller.c` and no
+compiler warnings.
 
-1. Open the ST-LINK virtual COM port.
-2. Reset the STM32.
-3. Capture the boot message.
+Recorded result, 2026-08-07: **PASS - zero warnings.** Image size was 26,952
+bytes text, 100 bytes initialized data, and 2,260 bytes BSS. Result was produced
+from the uncommitted integration worktree.
 
-Expected result:
+## UART-STATE-001 - Controller Transition Sequence
 
-- A complete boot message is received once per reset.
-- Motor state is reported as disabled.
+Status: **PENDING BOARD TEST**
 
-## MOTOR-001 — Open-Loop PWM
+Run with no external carrier and PB10 internally pulled up:
 
-Requirements: SAFE-001
+```text
+status
+duty 25
+enable
+status
+duty 25
+status
+reverse
+duty 0
+reverse
+status
+brake
+status
+release
+disable
+injectfault
+status
+enable
+clearfault
+status
+```
 
-Procedure:
+Expected behavior:
 
-1. Start with the driver disabled.
-2. Set the requested duty cycle to 10%.
-3. Enable the driver.
-4. Increase duty cycle in controlled increments.
-5. Return duty cycle to zero.
-6. Disable the driver.
+| Action | Expected result |
+|---|---|
+| Initial status | disabled, duty 0, fault none |
+| Duty while disabled | rejected |
+| Enable | READY/coast; EN low, ENB high |
+| Duty 25 | RUNNING; selected PWM channel active |
+| Reverse while running | rejected without output change |
+| Duty 0 | READY/coast; both PWM zero and driver disabled |
+| Reverse in READY | accepted |
+| Brake | BRAKING; both PWM low, EN high, ENB low |
+| Release | READY/coast; driver disabled |
+| Inject fault | FAULT; zero PWM and driver disabled |
+| Enable while faulted | rejected |
+| Clear fault | DISABLED with no fault |
 
-Expected result:
+Record the UART transcript plus `controller_state`, `latched_fault`,
+`commanded_duty_percent`, `commanded_direction`, `TIM4->CCR1`, and
+`TIM8->CCR2`.
 
-- Motor remains off before enable.
-- Motor responds to PWM commands.
-- Reset leaves the motor disabled.
+## SCOPE-PWM-001 - MCU PWM Outputs
 
-## ENC-001 — Encoder Direction
+Status: **PENDING EQUIPMENT-GATED TEST**
 
-Requirement: SNSR-001
+Measure PB6 and PC7 with the carrier disconnected. Record frequency, 10%, 25%,
+and 50% duty, forward/reverse routing, coast, braking, disable, and fault
+shutdown. The measured frequency must not exceed 20.0 kHz.
 
-Procedure:
+## DRIVER-LOGIC-001 - Logic-Only Carrier
 
-1. Rotate the shaft manually in one direction.
-2. Record the encoder count.
-3. Rotate the shaft in the opposite direction.
-4. Record the encoder count.
+Status: **PENDING SOLDERING AND EQUIPMENT GATE**
 
-Expected result:
+Verify carrier assembly, 5 V VCC, common ground, safe startup levels, DIAG, and
+absence of shorts with VIN and the motor disconnected.
 
-- Count increases in one direction.
-- Count decreases in the opposite direction.
+## DRIVER-POWER-001 - Powered Carrier Without Motor
 
-## CONTROL-001 — Speed Step Response
+Status: **PENDING DRIVER-LOGIC-001**
 
-Requirements: CTRL-001, CTRL-003, VAL-001
+Use fused, current-limited 12 V power with OUT1/OUT2 disconnected. Validate all
+controller states, DIAG, PWM routing, and temperature before connecting a motor.
 
-Procedure:
+## MOTOR-SPIN-001 - First Unloaded Motor Spin
 
-1. Command 20 RPM for five seconds.
-2. Command 60 RPM for ten seconds.
-3. Command 40 RPM for five seconds.
-4. Command zero.
-5. Save telemetry to CSV.
-6. Repeat five times.
+Status: **PENDING DRIVER-POWER-001**
 
-Measurements:
-
-- Rise time
-- Settling time
-- Overshoot
-- Steady-state error
-- Peak current
-- Missed deadlines
+Use a 0.5 A supply limit and the staged procedure in `wiring.md`. Demonstrate
+the lowest successful forward and reverse duty, READY/coast, disable, and
+software-fault shutdown. Record maximum observed current, supply settings,
+measured PWM, UART transcript, scope captures, and pass/fail result.

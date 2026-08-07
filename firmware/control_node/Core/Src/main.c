@@ -18,12 +18,12 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "command_console.h"
-#include "motor_driver.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "command_console.h"
+#include "motor_controller.h"
+#include "motor_driver.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -139,10 +139,10 @@ int main(void)
       Error_Handler();
   }
 
-  MotorDriver_SetDirection(MOTOR_DIRECTION_FORWARD);
-
-  /* Remain safely disabled until hardware is connected and tested. */
-  MotorDriver_Disable();
+  if (MotorController_Init() != MOTOR_CONTROLLER_STATUS_OK)
+  {
+      Error_Handler();
+  }
 
   if (!CommandConsole_Init(&huart2))
   {
@@ -163,6 +163,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    MotorController_Process();
     CommandConsole_Process();
 
     if ((HAL_GetTick() - last_led_toggle_ms) >= 500U)
@@ -176,7 +177,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
-  }
+}
 
 /**
   * @brief System Clock Configuration
@@ -419,7 +420,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : MOTOR_DIAG_Pin */
   GPIO_InitStruct.Pin = MOTOR_DIAG_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(MOTOR_DIAG_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : MOTOR_EN_Pin MOTOR_ENB_Pin */
