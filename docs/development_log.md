@@ -367,3 +367,119 @@ driver, verify it with native tests, and prepare a gated hardware procedure.
 
 Flash the integrated firmware with no carrier connected, run UART-STATE-001,
 and capture the PB6/PC7/EN/ENB waveforms required by SCOPE-PWM-001.
+
+---
+
+### 2026-08-11 — Safety-State Validation, Hardware Assembly, and TB9051 Logic Bring-Up
+
+**Goal**
+
+Validate the integrated motor-controller safety state machine on the physical
+NUCLEO-F446RE, assemble the purchased motor-control carriers, and begin
+logic-only TB9051FTG integration without applying motor power.
+
+**Work Completed**
+
+- Used production baseline commit `3a7cd32`, which was pushed to GitHub after
+  passing all 147 host assertions and a warning-free STM32 firmware build.
+- Flashed firmware version `0.1.0` to the NUCLEO-F446RE and opened the ST-LINK
+  virtual COM port at 115200 baud, 8 data bits, no parity, one stop bit, and no
+  flow control.
+- Confirmed normal boot in `DISABLED` and exercised the safety state machine
+  through the UART command console.
+- Verified that:
+  - A nonzero duty command is rejected in `DISABLED`.
+  - `enable` transitions `DISABLED -> READY` with zero duty and coast output.
+  - Nonzero duty transitions `READY -> RUNNING`.
+  - Direction changes are rejected in `RUNNING`.
+  - `duty 0` transitions `RUNNING -> READY` and disables the output.
+  - Direction changes are accepted in `READY`.
+  - `brake` transitions to `BRAKING` with zero commanded duty.
+  - `release` transitions `BRAKING -> READY` and restores coast output.
+  - A software-injected fault transitions `RUNNING -> FAULT`, clears duty,
+    rejects re-enable, remains latched, and clears only through `clearfault`.
+  - Unknown or malformed console commands are rejected.
+- Performed an additional direction-interlock test starting with reverse
+  selected. A `forward` command in `RUNNING` was rejected, then accepted after
+  `duty 0` returned the controller to `READY`.
+- Confirmed the purchased hardware as:
+  - Pololu #4866 75:1 Metal Gearmotor 25Dx69L MP 12 V with 48 CPR encoder.
+  - Pololu #2997 TB9051FTG single brushed DC motor-driver carrier.
+  - Pololu #4041 ACS724LLCTR-05AB current-sensor carrier.
+  - Pololu #2676 25D metal gearmotor bracket pair.
+- Soldered the TB9051 logic header, VIN/GND terminal, and OUT1/OUT2 terminal,
+  then visually inspected the assembled carrier.
+- Soldered the ACS724 low-voltage logic header. Its high-current path remains
+  disconnected.
+- Changed PB10/MOTOR_DIAG to `GPIO_NOPULL` in `main.c` and
+  `control_node.ioc` for use with the carrier's DIAG pull-up.
+- Connected the TB9051 logic interface:
+  - Nucleo 5 V -> TB9051 VCC
+  - Nucleo GND -> TB9051 GND
+  - PB6 / TIM4_CH1 -> TB9051 PWM1
+  - PC7 / TIM8_CH2 -> TB9051 PWM2
+  - PA8 -> TB9051 EN
+  - PA10 -> TB9051 ENB
+  - PB10 <- TB9051 DIAG
+- Kept TB9051 VIN, OUT1/OUT2, the motor, encoder, ACS724 high-current path,
+  and all 12 V motor power disconnected.
+- Exercised the physical DIAG path with the carrier logic powered but VIN
+  absent. After `enable`, the controller detected the carrier's diagnostic
+  condition, latched `FAULT`, rejected a subsequent `duty 50`, and reported
+  `ERR physical fault is still present` when `clearfault` was attempted.
+
+**Observations**
+
+- The UART state transitions and direction interlock matched the intended
+  safety policy on the physical Nucleo.
+- The VIN-absent DIAG test was the first validation of a real carrier fault
+  propagating through TB9051 DIAG, STM32 PB10, controller fault monitoring, and
+  the latched `FAULT` state.
+- The `disable` command safely disables the output without clearing a latched
+  fault, as designed. However, the console currently prints the hard-coded
+  response `OK state=disabled duty=0`, which can misreport the actual retained
+  `FAULT` state.
+- No oscilloscope was available during this session. PWM validation remains
+  limited to the 84 MHz timer configuration, ARR 4199 calculation, earlier
+  debugger/register checks, and automated tests. Physical frequency, duty,
+  voltage-level, braking, and fault-shutdown waveforms remain unmeasured.
+- The configured PWM frequency remains nominally 20 kHz:
+
+  `84,000,000 / 4200 = 20,000 Hz`
+
+- A multimeter and possible battery-supported 12 V source may be available,
+  but a suitable regulated/current-limited supply, fuse, and cutoff hardware
+  have not yet been confirmed.
+
+**Problems / Open Gates**
+
+- Correct the UART `disable` success response so it reports the controller's
+  actual post-command state instead of always claiming `DISABLED`.
+- Physically measure PB6 and PC7 frequency, duty scaling, direction routing,
+  disabled output, braking output, and fault shutdown when an oscilloscope is
+  available.
+- Confirm the required 12 V supply, current limiting, inline fuse, cutoff,
+  multimeter, power wiring, and motor restraint before powered testing.
+- The TB9051 has not received 12 V, OUT1/OUT2 remain unloaded, and the motor
+  has not been spun.
+- The encoder and ACS724 high-current path remain intentionally disconnected.
+
+**Decisions**
+
+- Use the carrier's DIAG pull-up and keep the STM32 PB10 input configured with
+  no internal pull resistor while the carrier is connected.
+- Treat the misleading `disable` response as a telemetry/UI defect; the
+  observed output shutdown and retained fault latch behaved safely.
+- Do not apply motor power until the remaining equipment gate and
+  carrier-disconnected validation requirements are satisfied.
+- Perform the first powered-carrier test with the motor and OUT1/OUT2 still
+  disconnected before attempting an unloaded motor spin.
+- Keep encoder feedback, ACS724 current sensing, closed-loop control, RTOS,
+  and CAN work outside this bring-up milestone.
+
+**Next Step**
+
+Correct and revalidate the `disable` response, complete the oscilloscope and
+power-equipment gates, then apply fused/current-limited 12 V to the TB9051 with
+the motor still disconnected and verify that the undervoltage DIAG condition
+clears without unexpected current draw or heating.

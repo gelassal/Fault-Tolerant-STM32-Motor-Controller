@@ -420,7 +420,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : MOTOR_DIAG_Pin */
   GPIO_InitStruct.Pin = MOTOR_DIAG_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(MOTOR_DIAG_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : MOTOR_EN_Pin MOTOR_ENB_Pin */
