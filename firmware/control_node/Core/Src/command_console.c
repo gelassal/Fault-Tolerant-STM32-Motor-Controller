@@ -174,7 +174,7 @@ static const char *ControllerFaultToString(
 }
 
 
-static void SendMotorStatus(void)
+static void SendMotorStatus(const char *prefix)
 {
     char response[160];
 
@@ -200,7 +200,8 @@ static void SendMotorStatus(void)
     (void)snprintf(
         response,
         sizeof(response),
-        "STATUS state=%s direction=%s duty=%d fault=%s\r\n",
+        "%s state=%s direction=%s duty=%d fault=%s\r\n",
+        prefix,
         state_text,
         direction_text,
         duty_percent,
@@ -212,14 +213,18 @@ static void SendMotorStatus(void)
 
 
 static void SendControllerResult(
-    MotorControllerStatus_t status,
-    const char *success_message)
+    MotorControllerStatus_t status)
 {
     switch (status)
     {
         case MOTOR_CONTROLLER_STATUS_OK:
-            ConsoleWrite(success_message);
-            break;
+            /*
+             * Always report the controller's actual post-command state.
+             * In particular, disable makes the hardware safe but must not
+             * falsely claim DISABLED when a fault remains latched.
+             */
+            SendMotorStatus("OK");
+            return;
 
         case MOTOR_CONTROLLER_STATUS_NOT_INITIALIZED:
             ConsoleWrite(
@@ -263,13 +268,15 @@ static void SendControllerResult(
             );
             break;
     }
+
+    /* A rejected controller command must not hide the retained state. */
+    SendMotorStatus("STATUS");
 }
 
 
 static void HandleDutyCommand(char *argument)
 {
     char *end_pointer = NULL;
-    char response[48];
 
     if ((argument == NULL) ||
         (*argument == '\0'))
@@ -309,18 +316,11 @@ static void HandleDutyCommand(char *argument)
 
     if (status != MOTOR_CONTROLLER_STATUS_OK)
     {
-        SendControllerResult(status, "");
+        SendControllerResult(status);
         return;
     }
 
-    (void)snprintf(
-        response,
-        sizeof(response),
-        "OK duty=%ld\r\n",
-        duty_percent
-    );
-
-    ConsoleWrite(response);
+    SendControllerResult(status);
 }
 
 
@@ -340,15 +340,13 @@ static void HandleCommand(char *command)
     if (strcmp(normalized_command, "enable") == 0)
     {
         SendControllerResult(
-            MotorController_Enable(),
-            "OK state=ready duty=0 output=coast\r\n"
+            MotorController_Enable()
         );
     }
     else if (strcmp(normalized_command, "disable") == 0)
     {
         SendControllerResult(
-            MotorController_Disable(),
-            "OK state=disabled duty=0\r\n"
+            MotorController_Disable()
         );
     }
     else if (strcmp(normalized_command, "forward") == 0)
@@ -356,8 +354,7 @@ static void HandleCommand(char *command)
         SendControllerResult(
             MotorController_SetDirection(
                 MOTOR_DIRECTION_FORWARD
-            ),
-            "OK direction=forward\r\n"
+            )
         );
     }
     else if (strcmp(normalized_command, "reverse") == 0)
@@ -365,8 +362,7 @@ static void HandleCommand(char *command)
         SendControllerResult(
             MotorController_SetDirection(
                 MOTOR_DIRECTION_REVERSE
-            ),
-            "OK direction=reverse\r\n"
+            )
         );
     }
     else if (strncmp(
@@ -387,15 +383,13 @@ static void HandleCommand(char *command)
     else if (strcmp(normalized_command, "brake") == 0)
     {
         SendControllerResult(
-            MotorController_Brake(),
-            "OK brake active\r\n"
+            MotorController_Brake()
         );
     }
     else if (strcmp(normalized_command, "release") == 0)
     {
         SendControllerResult(
-            MotorController_ReleaseBrake(),
-            "OK state=ready duty=0 output=coast\r\n"
+            MotorController_ReleaseBrake()
         );
     }
     else if (strcmp(normalized_command, "injectfault") == 0)
@@ -403,20 +397,18 @@ static void HandleCommand(char *command)
         SendControllerResult(
             MotorController_ReportFault(
                 MOTOR_CONTROLLER_FAULT_SOFTWARE
-            ),
-            "OK software fault injected; state=fault\r\n"
+            )
         );
     }
     else if (strcmp(normalized_command, "clearfault") == 0)
     {
         SendControllerResult(
-            MotorController_ClearFault(),
-            "OK fault cleared; state=disabled\r\n"
+            MotorController_ClearFault()
         );
     }
     else if (strcmp(normalized_command, "status") == 0)
     {
-        SendMotorStatus();
+        SendMotorStatus("STATUS");
     }
     else if (strcmp(normalized_command, "help") == 0)
     {

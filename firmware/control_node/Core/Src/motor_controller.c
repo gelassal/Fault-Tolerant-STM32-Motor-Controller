@@ -383,9 +383,7 @@ MotorControllerStatus_t MotorController_SetDirection(
             MOTOR_CONTROLLER_STATUS_FAULT_ACTIVE;
     }
 
-    /*
-     * Direction may change only while enabled with zero duty.
-     */
+    /* Direction may change only while READY and electrically coasting. */
     if (controller_state !=
         MOTOR_CONTROLLER_STATE_READY)
     {

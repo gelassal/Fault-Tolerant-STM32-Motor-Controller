@@ -7,8 +7,8 @@ automated validation using measured results.
 
 ## Current Status
 
-The current milestone integrates and validates the open-loop safety layer before
-external motor hardware is powered.
+The current milestone integrates the open-loop safety layer and encoder
+measurement foundation before external motor hardware is powered.
 
 Completed in firmware:
 
@@ -21,21 +21,29 @@ Completed in firmware:
 - Direction interlock, latched faults, explicit fault clearing, and software
   fault injection
 - Native state-machine regression suite with a mocked motor driver
+- TIM3 quadrature encoder mode on PB4/PB5 with 16-bit wrap handling
+- Nonblocking 10 ms encoder sampling, continuous count, RPM, and direction
+- HAL-free encoder-math regression suite using the exact 3,591.84 output-shaft
+  counts per revolution of Pololu #4866
+- Python UART HIL smoke-test skeleton for repeatable safety-state validation
 
-Verified on 2026-08-07:
+Verified through 2026-08-12:
 
 - All 147 native motor-controller assertions passed with `-Wall -Wextra
   -Werror -pedantic`.
-- The STM32 Debug firmware built and linked with zero warnings.
-- Image size: 26,952 bytes text, 100 bytes initialized data, and 2,260 bytes BSS.
+- All 57 native encoder assertions passed with the same strict warnings.
+- Physical Nucleo UART safety-state behavior and the carrier's VIN-absent DIAG
+  fault path were validated.
+- A complete STM32 Debug rebuild compiled and linked with zero warnings.
+- Image size: 28,388 bytes text, 100 bytes initialized data, and 2,384 bytes BSS.
 
 Not yet physically verified:
 
 - PWM frequency and duty cycle with an oscilloscope
-- Soldered TB9051FTG carrier and logic wiring
 - Powered driver behavior
 - First motor spin
-- Encoder feedback, current sensing, closed-loop control, FreeRTOS, CAN, and HIL
+- Physical encoder signals and direction polarity
+- Current sensing, closed-loop control, FreeRTOS, CAN, and executed HIL tests
 
 ## Hardware
 
@@ -73,16 +81,17 @@ FreeRTOS tasks.
 
 ## Native Tests
 
-From `tests/motor_controller`:
+Run both native suites:
 
 ```powershell
-mingw32-make run
+mingw32-make -C tests\motor_controller run
+mingw32-make -C tests\encoder run
 ```
 
-The tests compile the production controller against a fake driver and verify
-legal and illegal transitions, coast/brake behavior, safe duty sequencing,
-diagnostic and software faults, low-level failures, fault latching, and fault
-clearing.
+The controller tests use a fake motor driver to verify state policy and fault
+handling. The encoder tests feed synthetic counter values into production math
+to verify signed motion, zero speed, rollover, high count rates, accumulated
+position, direction inversion, and RPM conversion.
 
 ## Long-Term Target
 
