@@ -25,6 +25,25 @@ driver is disabled.
 
 Recorded result, 2026-08-07: **PASS - 147 of 147 assertions passed.**
 
+## HOST-ENC-001 - Encoder Measurement Math
+
+Requirements: SNSR-001, VAL-002
+
+Procedure:
+
+1. From `tests/encoder`, run `mingw32-make run`.
+2. Compile the production `encoder_math.c` with
+   `-Wall -Wextra -Werror -pedantic`.
+3. Feed synthetic 16-bit TIM3 counts into the tracker and verify positive,
+   negative, stationary, wraparound, high-rate, inversion, accumulated-count,
+   and RPM-conversion behavior.
+
+Expected result: all assertions pass using 3,591.84 counts per revolution for
+the Pololu #4866 gearbox output. Counter changes must remain below 32,768
+counts per sample so the signed modular difference is unambiguous.
+
+Recorded result, 2026-08-12: **PASS - 57 of 57 assertions passed.**
+
 ## BUILD-001 - STM32 Debug Firmware
 
 Procedure: refresh the CubeIDE managed build and build the Debug configuration.
@@ -36,9 +55,14 @@ Recorded result, 2026-08-07: **PASS - zero warnings.** Image size was 26,952
 bytes text, 100 bytes initialized data, and 2,260 bytes BSS. Result was produced
 from the uncommitted integration worktree.
 
+Recorded result, 2026-08-12: **PASS - complete forced rebuild with zero
+warnings.** The build compiled and linked `encoder_driver.c` and
+`encoder_math.c`. Image size was 28,388 bytes text, 100 bytes initialized data,
+and 2,384 bytes BSS (30,872 bytes total).
+
 ## UART-STATE-001 - Controller Transition Sequence
 
-Status: **PENDING BOARD TEST**
+Status: **PASS ON PHYSICAL NUCLEO, 2026-08-11**
 
 Run with no external carrier and PB10 internally pulled up:
 
@@ -85,6 +109,19 @@ Record the UART transcript plus `controller_state`, `latched_fault`,
 `commanded_duty_percent`, `commanded_direction`, `TIM4->CCR1`, and
 `TIM8->CCR2`.
 
+Recorded result: the command sequence, READY/coast behavior, duty interlock,
+direction interlock, brake/release transitions, injected-fault latch, rejected
+re-enable, and explicit clear were observed through the ST-LINK virtual COM
+port. Oscilloscope evidence remains pending under SCOPE-PWM-001.
+
+Supplemental recorded result, 2026-08-14: **PASS - dynamic fault telemetry.**
+On the physical Nucleo, `injectfault` reported `state=fault` and
+`fault=software`; `disable` retained and reported that same fault state; and a
+following `status` confirmed the latch. Reset restored the defined safe startup
+report of `state=disabled direction=forward duty=0 fault=none`. Malformed
+commands were rejected. This verifies UART/controller telemetry only; it is
+not a powered-carrier or oscilloscope result.
+
 ## SCOPE-PWM-001 - MCU PWM Outputs
 
 Status: **PENDING EQUIPMENT-GATED TEST**
@@ -95,17 +132,97 @@ shutdown. The measured frequency must not exceed 20.0 kHz.
 
 ## DRIVER-LOGIC-001 - Logic-Only Carrier
 
-Status: **PENDING SOLDERING AND EQUIPMENT GATE**
+Status: **PARTIAL, 2026-08-11**
 
 Verify carrier assembly, 5 V VCC, common ground, safe startup levels, DIAG, and
 absence of shorts with VIN and the motor disconnected.
 
+Recorded result: the carrier was soldered and logic wiring was completed with
+PB10 configured as `GPIO_NOPULL`. With VIN absent, the real DIAG signal
+propagated through PB10 and latched a controller fault. Final voltage and
+continuity measurements remain pending.
+
 ## DRIVER-POWER-001 - Powered Carrier Without Motor
 
-Status: **PENDING DRIVER-LOGIC-001**
+Status: **PENDING OSCILLOSCOPE AND UNPOWERED PREPARATION**
 
 Use fused, current-limited 12 V power with OUT1/OUT2 disconnected. Validate all
 controller states, DIAG, PWM routing, and temperature before connecting a motor.
+
+### Preconditions
+
+- Motor red/black leads, encoder leads, OUT1, OUT2, and the ACS724 current path
+  remain disconnected.
+- The Nucleo USB, supply, and kill switch remain off during inspection and
+  wiring.
+- Supply positive is routed through a 1 A inline fuse placed near the supply,
+  then through an accessible kill switch to TB9051 VIN.
+- Supply negative is connected directly to TB9051 GND, which already shares
+  ground with the Nucleo.
+- Supply is off while wiring, set to 12.0 V, and current-limited to 0.25 A.
+- Polarity is verified at the loose supply leads before they touch the carrier.
+- Carrier solder joints, terminal polarity, exposed conductors, screw
+  tightness, and the absence of a sustained VIN-to-GND continuity short are
+  verified before power is applied.
+- Oscilloscope grounds connect only to system GND, never across OUT1 and OUT2.
+
+### Required Measurements and PASS/FAIL Limits
+
+| Check | PASS | FAIL / immediate abort |
+|---|---|---|
+| Supply before connection | 11.8-12.2 V with correct polarity | Outside range or reversed polarity |
+| VIN at carrier after power-on | 11.8-12.2 V and stable | Collapse, oscillation, or outside range |
+| Logic VCC | 4.75-5.25 V | Outside range |
+| Initial supply current | Expected well below 0.05 A; 0.25 A limit inactive | Current limiting is an immediate abort; at/above 0.05 A requires stop and investigation |
+| Initial controller state | `DISABLED`, duty 0 | Any enabled/running output |
+| READY | EN low, ENB high, both PWM low; low DIAG is expected | Driver enabled or PWM nonzero |
+| RUNNING command, outputs unloaded | EN high, ENB low, DIAG deasserted, no latched fault | DIAG asserted with valid VIN/VCC, current limit, or voltage collapse |
+| BRAKING | EN high, ENB low, PWM1/PWM2 low, DIAG deasserted | Incorrect control level or DIAG asserted with valid VIN/VCC |
+| RELEASE/DISABLED/FAULT | EN low, ENB high, PWM1/PWM2 low; low DIAG is expected | Any active output |
+| `clearfault` after software fault | Returns to `DISABLED` | Physical fault remains or output stays enabled |
+| Kill-switch check | After discharge, VIN falls below 0.5 V | VIN remains at/above 0.5 V |
+| Two-minute unloaded observation | Current stable and expected well below 0.05 A; no heat, odor, or noise | At/above 0.05 A requires investigation; rising current, heat, odor, or noise is an abort |
+
+### Command and Waveform Sequence
+
+After verifying 11.8-12.2 V at VIN, 4.75-5.25 V at logic VCC, stable unloaded
+current, and successful kill-switch removal of VIN, run:
+
+```text
+status
+enable
+duty 10
+duty 0
+reverse
+duty 10
+brake
+release
+duty 10
+injectfault
+disable
+clearfault
+status
+```
+
+Record forward PWM on PB6 with PC7 low, reverse PWM on PC7 with PB6 low,
+READY/RELEASE coast levels, BRAKING levels, and injected-fault shutdown. PWM
+must be nominally 20.0 kHz and must not exceed 20.0 kHz. Keep ARR `4199` when
+the measurement is at or below the limit; only change both PWM timers to ARR
+`4299` and repeat validation if the measured frequency is genuinely above it.
+
+DIAG is intentionally low whenever the TB9051 is disabled (`EN=0` or
+`ENB=1`), so that level is expected in DISABLED, READY/coast, RELEASE, and
+FAULT. Treat DIAG as a fault indication only while the driver is commanded
+enabled (`EN=1`, `ENB=0`) with valid VIN and VCC.
+
+Record actual supply voltage, carrier VIN, VCC, idle current, maximum observed
+current, UART transcript, DIAG behavior, and pass/fail for every row. A failed
+row blocks motor connection. Immediately cut power for reversed polarity,
+current limiting, voltage collapse, heat, odor, noise, incorrect waveforms, or
+DIAG asserted while the driver is commanded enabled with valid VIN/VCC. If
+unloaded current reaches or exceeds 0.05 A, stop and investigate before
+continuing. Do not connect the motor after this test; review and document the
+complete DRIVER-POWER-001 record first.
 
 ## MOTOR-SPIN-001 - First Unloaded Motor Spin
 

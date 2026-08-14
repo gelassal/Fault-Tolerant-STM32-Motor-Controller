@@ -483,3 +483,172 @@ Correct and revalidate the `disable` response, complete the oscilloscope and
 power-equipment gates, then apply fused/current-limited 12 V to the TB9051 with
 the motor still disconnected and verify that the undervoltage DIAG condition
 clears without unexpected current draw or heating.
+
+---
+
+### 2026-08-12 — Encoder Foundation and Automated UART HIL Skeleton
+
+**Goal**
+
+Correct misleading command telemetry, implement the encoder measurement
+foundation without requiring motor power, verify its arithmetic natively, and
+define an objective motor-disconnected powered-carrier test.
+
+**Work Completed**
+
+- Reworked controller-command responses so successful commands print the
+  controller's actual state, direction, duty, and fault. Rejected controller
+  commands now also print the retained state after the error.
+- Removed the hard-coded `disable` response that incorrectly claimed
+  `DISABLED` when a fault remained latched.
+- Configured TIM3 in quadrature encoder mode on PB4/TIM3_CH1 and PB5/TIM3_CH2:
+  - Encoder mode TI12, counting both edges of both channels.
+  - 16-bit period of 65,535.
+  - Input filter value 4 on both channels.
+  - No GPIO pull resistors.
+- Added `encoder_driver.c/.h` with nonblocking 10 ms sampling and getters for
+  continuous signed count, sample delta, gearbox-output RPM, and direction.
+- Added a configurable direction inversion for later physical A/B polarity
+  calibration.
+- Added HAL-free `encoder_math.c/.h` for portable signed-delta, rollover,
+  accumulated-position, direction, and RPM calculations.
+- Used the Pololu #4866 specification of 3,591.84 counts per gearbox-output
+  revolution (48 counts per motor revolution through the exact 74.83:1 ratio).
+- Added native encoder tests covering positive/negative motion, zero speed,
+  forward/reverse counter wrap, accumulation, high count rate, exact RPM
+  conversion, direction inversion, and invalid inputs.
+- Added a Python/pyserial UART HIL smoke-test skeleton for `status`, `enable`,
+  `duty 25`, `injectfault`, and `clearfault`. The script parses actual state
+  responses and requires explicit motor-disconnected acknowledgement.
+- Added a quantitative DRIVER-POWER-001 procedure with voltage, current,
+  state/output, and abort criteria for the first 12 V test with OUT1/OUT2 and
+  the motor disconnected.
+
+**Verification**
+
+- All 57 encoder assertions passed with
+  `-Wall -Wextra -Werror -pedantic`.
+- All 147 existing motor-controller assertions still passed.
+- The Python HIL script passed bytecode syntax validation.
+- CubeIDE managed-build metadata discovered both encoder production sources.
+- A complete forced STM32 rebuild compiled and linked every source with zero
+  warnings.
+- Linked image size was 28,388 bytes text, 100 bytes initialized data, and
+  2,384 bytes BSS (30,872 bytes total).
+
+**Observations**
+
+- At the motor's typical 100 RPM gearbox-output speed, a 10 ms interval yields
+  approximately 60 counts per sample. This is far below the 32,768-count
+  modular-delta ambiguity limit.
+- The current encoder direction names are a logical convention. PB4/PB5 channel
+  order must be physically checked before forward/reverse sign is accepted.
+- The expected-success HIL sequence cannot pass with the carrier logic powered
+  but VIN absent because that real undervoltage condition correctly holds DIAG
+  faulted.
+
+**Problems / Open Gates**
+
+- TIM3 counter movement, direction polarity, and RPM have not been validated
+  with physical encoder signals.
+- The updated UART response format and encoder initialization must be reflashed
+  and smoke-tested on the Nucleo.
+- The oscilloscope is not currently available, so PWM measurements remain
+  pending.
+- The protected/current-limited 12 V equipment gate must be completed before
+  DRIVER-POWER-001 is executed.
+
+**Decisions**
+
+- Keep encoder math separate from the HAL wrapper so rollover and conversion
+  behavior can be exhaustively tested on the host.
+- Calculate gearbox-output RPM using the exact product count rather than the
+  rounded 75:1 marketing ratio.
+- Keep encoder measurement observational for now; do not add encoder-loss
+  faults or closed-loop control until physical polarity and counts are verified.
+- Keep FreeRTOS deferred until encoder acquisition and powered open-loop
+  hardware behavior are validated synchronously.
+
+**Next Step**
+
+Review and flash the new firmware, verify the dynamic UART responses, then
+complete the supply/fuse/cutoff gate and execute DRIVER-POWER-001 with the motor
+and OUT1/OUT2 disconnected. Physical encoder wiring and direction calibration
+follow only after the powered driver passes.
+
+---
+
+### 2026-08-14 — UART Fault-Telemetry Validation and Power-Test Readiness
+
+**Goal**
+
+Physically verify the corrected dynamic UART responses, confirm that fault
+latching is reported accurately, and close the equipment-acquisition portion
+of the motor-disconnected power-test gate.
+
+**Work Completed**
+
+- Flashed and ran the integrated firmware on the NUCLEO-F446RE.
+- Entered `injectfault`, followed by `disable` and `status`, and physically
+  verified through the ST-LINK UART console that:
+  - `injectfault` transitioned the controller to `FAULT` with
+    `fault=software` and duty zero.
+  - `disable` safely retained and reported `state=fault` rather than
+    incorrectly claiming `DISABLED`.
+  - A following `status` still reported the latched `FAULT` state.
+- Pressed reset and verified the safe startup report:
+  `state=disabled direction=forward duty=0 fault=none`.
+- Verified that malformed commands, including `inject fault`, were rejected as
+  unknown commands without changing controller state.
+- Acquired or confirmed the following powered-test equipment:
+  - Adjustable, regulated 12 V supply rated for at least 2 A with current
+    limiting.
+  - 1 A inline fuse.
+  - DC kill switch rated for at least 12 V and 2 A.
+  - Multimeter.
+  - Proper insulated power wire and secure terminations.
+- Confirmed that an oscilloscope with x10 probes will be available before the
+  powered waveform test.
+
+**Observations**
+
+- The dynamic console response now reflects the controller's real post-command
+  state. `disable` makes the physical output safe but intentionally does not
+  clear a latched fault.
+- Reset reinitializes the RAM-held software fault latch and restores the
+  defined safe startup state. Because the driver is disabled after reset, this
+  does not by itself prove that a physical DIAG condition has cleared.
+- No 12 V motor supply has been applied. OUT1, OUT2, the motor, encoder leads,
+  and ACS724 high-current path remain disconnected.
+- No physical encoder count, direction, or RPM measurement has occurred.
+
+**Problems / Open Gates**
+
+- The oscilloscope is not yet on the bench, so DRIVER-POWER-001 must not begin.
+- The unpowered carrier inspection, VIN-to-GND continuity check, protected
+  supply-harness assembly, and loose-lead polarity measurement still need to
+  be performed and recorded.
+- The secure motor-restraint gate remains open for MOTOR-SPIN-001; it does not
+  block the current motor-disconnected milestone.
+
+**Decisions**
+
+- Treat a low TB9051 DIAG level as expected while the carrier is disabled or
+  coasting (`EN=0` or `ENB=1`). Evaluate DIAG as a hardware fault only while
+  the driver is commanded enabled (`EN=1`, `ENB=0`) with valid VIN and VCC.
+- Treat 50 mA as a conservative investigation threshold for the unloaded
+  carrier, not as a hard datasheet pass/fail limit. If measured current is at
+  or above 50 mA, stop and investigate before continuing.
+- Retain TIM4/TIM8 ARR `4199` for the intentional nominal 20.0 kHz PWM
+  configuration. Change both timers to ARR `4299` only if the oscilloscope
+  genuinely measures a frequency above 20.0 kHz.
+- Keep the motor, encoder, and ACS724 current path disconnected throughout
+  DRIVER-POWER-001, and review its records before authorizing a motor test.
+
+**Next Step**
+
+With all power sources off, inspect the carrier, verify that VIN is not
+shorted to GND, and assemble the fused kill-switch harness. Once the
+oscilloscope is present, execute DRIVER-POWER-001 at 12.0 V with a 0.25 A
+current limit and record every required voltage, current, UART, DIAG, and
+waveform result before proceeding.
