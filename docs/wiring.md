@@ -2,10 +2,10 @@
 
 ## Status
 
-The carrier logic has been assembled and connected, and its VIN-absent DIAG
-fault was detected on 2026-08-11. No 12 V has been applied and the motor has
-not been connected or spun. The powered stages below remain an approved plan,
-not completed validation.
+The carrier logic, fused 12 V path, motor-disconnected driver test, and first
+unloaded motor spin have been completed. DRIVER-POWER-001 passed on 2026-08-18
+and MOTOR-SPIN-001 passed on 2026-08-19. Physical encoder wiring and validation
+are the next hardware stage.
 
 Confirmed components:
 
@@ -22,8 +22,8 @@ Confirmed components:
 | Enable | PA8 | GPIO output | EN |
 | Enable-bar | PA10 | GPIO output | ENB |
 | Diagnostic | PB10 | GPIO input | DIAG |
-| Encoder A | PB4 | TIM3_CH1 | Yellow encoder lead (future stage) |
-| Encoder B | PB5 | TIM3_CH2 | White encoder lead (future stage) |
+| Encoder A | PB4 | TIM3_CH1 | Yellow encoder lead (Stage 5) |
+| Encoder B | PB5 | TIM3_CH2 | White encoder lead (Stage 5) |
 | UART TX | PA2 | USART2_TX | ST-LINK VCP |
 | UART RX | PA3 | USART2_RX | ST-LINK VCP |
 
@@ -46,11 +46,9 @@ The restraint is a separate mandatory gate before MOTOR-SPIN-001:
 - [x] 1 A inline fuse for the initial unloaded test
 - [x] Accessible DC kill switch rated for at least 12 V and 2 A
 - [x] Multimeter
-- [ ] Oscilloscope with x10 probes (confirmed available before the powered
-      waveform session, but not yet on the bench)
+- [x] Oscilloscope with x10 probes
 - [x] Suitable motor and supply wire; no Dupont wires in the current path
-- [ ] Secure motor restraint (required before MOTOR-SPIN-001, not
-      DRIVER-POWER-001)
+- [x] Secure motor restraint
 - [x] Soldering, inspection, and insulation supplies
 
 ## Carrier Assembly
@@ -82,7 +80,7 @@ place when measured PWM is at or below 20.0 kHz. Only if the oscilloscope
 genuinely measures above 20.0 kHz, change TIM4 and TIM8 ARR to `4299` for a
 nominal 19.53 kHz, regenerate, rebuild, and repeat the test.
 
-## Stage 2: Logic-Only Carrier Wiring — Partially Complete
+## Stage 2: Logic-Only Carrier Wiring — Complete
 
 PB10 has been changed to `GPIO_NOPULL`. The following logic wiring was completed
 on 2026-08-11:
@@ -97,11 +95,11 @@ PA10       -> Driver ENB
 PB10       -> Driver DIAG
 ```
 
-VIN, OUT1, OUT2, and the motor remain disconnected. The VIN-absent DIAG fault
-path was successfully exercised. Exact VCC, logic-level, continuity, and PWM
-measurements still must be recorded before this stage is marked complete.
+The VIN-absent DIAG fault path was successfully exercised. Subsequent powered
+validation measured 4.72 V logic VCC and confirmed the required EN, ENB, DIAG,
+and PWM behavior.
 
-## Stage 3: Motor Supply, Motor Disconnected
+## Stage 3: Motor Supply, Motor Disconnected — Complete
 
 ### Unpowered Preparation
 
@@ -191,7 +189,10 @@ connect the motor after this test; review DRIVER-POWER-001 first.
 For an earth-referenced oscilloscope, connect probe grounds only to system GND.
 Never place a scope ground across OUT1 and OUT2.
 
-## Stage 4: First Unloaded Motor Spin
+Recorded result: **PASS on 2026-08-18.** See `test_plan.md` and
+`development_log.md` for measurements and documented limitations.
+
+## Stage 4: First Unloaded Motor Spin — Complete
 
 1. Power off and connect only the red/black motor leads to OUT1/OUT2.
 2. Isolate the green, blue, yellow, and white encoder leads.
@@ -211,3 +212,8 @@ Abort immediately for current-limit activation, rising current without
 rotation, voltage collapse, heat, odor, abnormal noise, an unexpected
 waveform, or DIAG asserted while the driver is commanded enabled with valid
 VIN/VCC.
+
+Recorded result: **PASS on 2026-08-19.** The lowest reliable unloaded starting
+duty was 12% in both directions at approximately 0.036 A. Software-fault
+injection immediately removed drive, latched FAULT, rejected re-enable, and
+cleared explicitly back to DISABLED.

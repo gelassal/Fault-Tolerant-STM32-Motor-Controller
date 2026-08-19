@@ -7,8 +7,10 @@ automated validation using measured results.
 
 ## Current Status
 
-The current milestone integrates the open-loop safety layer and encoder
-measurement foundation before external motor hardware is powered.
+The open-loop safety layer has now been validated through fused carrier power,
+bidirectional unloaded motor operation, and physical software-fault shutdown.
+The active milestone is exposing and validating the existing encoder
+measurement subsystem on real hardware.
 
 Completed in firmware:
 
@@ -27,7 +29,7 @@ Completed in firmware:
   counts per revolution of Pololu #4866
 - Python UART HIL smoke-test skeleton for repeatable safety-state validation
 
-Verified through 2026-08-12:
+Verified through 2026-08-19:
 
 - All 147 native motor-controller assertions passed with `-Wall -Wextra
   -Werror -pedantic`.
@@ -36,12 +38,14 @@ Verified through 2026-08-12:
   fault path were validated.
 - A complete STM32 Debug rebuild compiled and linked with zero warnings.
 - Image size: 28,388 bytes text, 100 bytes initialized data, and 2,384 bytes BSS.
+- DRIVER-POWER-001 passed at 12.0 V with a 0.25 A current limit, approximately
+  0.002 A unloaded current, and measured 19.90-19.95 kHz PWM.
+- MOTOR-SPIN-001 passed at a lowest reliable 12% starting duty in both
+  directions, approximately 0.036 A running current, and verified software-fault
+  coast and latch behavior.
 
 Not yet physically verified:
 
-- PWM frequency and duty cycle with an oscilloscope
-- Powered driver behavior
-- First motor spin
 - Physical encoder signals and direction polarity
 - Current sensing, closed-loop control, FreeRTOS, CAN, and executed HIL tests
 
@@ -112,5 +116,5 @@ stretch goals after the development-board system is validated.
   tests pass.
 - Do not publish performance claims without saved test records.
 
-Measured scope captures and motor results will be added only after the physical
-tests are completed.
+Curated scope captures and motor-test summaries are stored under
+`results/evidence/`; bulk raw captures remain intentionally ignored.

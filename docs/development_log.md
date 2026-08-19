@@ -652,3 +652,205 @@ shorted to GND, and assemble the fused kill-switch harness. Once the
 oscilloscope is present, execute DRIVER-POWER-001 at 12.0 V with a 0.25 A
 current limit and record every required voltage, current, UART, DIAG, and
 waveform result before proceeding.
+
+---
+
+### 2026-08-18 — Motor-Disconnected 12 V Bring-Up and PWM Validation
+
+**Goal**
+
+Assemble and validate the protected 12 V supply path, apply motor power to the
+TB9051 carrier for the first time with all outputs unloaded, and measure the
+forward/reverse PWM and software-fault behavior without connecting the motor.
+
+**Work Completed**
+
+- Kept OUT1, OUT2, the motor, encoder leads, and ACS724 high-current path
+  disconnected throughout the session.
+- Assembled the protected supply path using an inline blade-fuse holder and an
+  illuminated three-wire kill switch:
+  - Supply positive -> inline fuse -> switch red/input wire.
+  - Switch yellow/switched-positive wire -> TB9051 VIN.
+  - Supply negative and switch black/indicator-ground wire -> common system
+    ground.
+- Performed unpowered checks before applying motor power:
+  - VIN-to-GND resistance was initially approximately 9 MOhm and later
+    approximately 5-7 MOhm with the completed harness connected.
+  - The fuse, fuse holder, switch path, and completed positive/negative wiring
+    paths showed approximately 0 Ohm where continuity was required.
+  - The kill switch produced an open circuit while off and continuity while
+    on.
+- Configured the regulated supply for 12.0 V with a 0.25 A current limit and
+  measured 12.0 V at its unloaded output. The supply correctly displayed 0 A
+  in constant-voltage mode with no load attached.
+- Found and corrected a logic-power wiring error: the TB9051 VCC lead had been
+  connected to the Nucleo `E5V` external-input pin instead of the USB-powered
+  `+5V` output pin.
+- After correction, measured the same 4.72 V at the Nucleo `+5V` pin and the
+  TB9051 VCC pin, showing no measurable wiring drop.
+- Confirmed safe UART startup before applying 12 V:
+  `state=disabled direction=forward duty=0 fault=none`.
+- Applied fused, current-limited 12 V to the motor-disconnected carrier:
+  - Carrier VIN measured 12.0 V.
+  - Supply remained in constant-voltage mode.
+  - Maximum observed current was 0.002 A.
+  - No heating, odor, noise, voltage collapse, or other unexpected behavior
+    occurred.
+- Visually confirmed that the installed inline fuse is marked 1 A.
+- Completed the required two-minute powered, unloaded observation. Current
+  remained stable at approximately 0.002 A and well below 0.05 A, the supply
+  remained in constant-voltage mode, and no heating, odor, noise, instability,
+  or voltage collapse occurred.
+- Verified the kill switch removed external motor power. With USB logic power
+  still present, VIN measured 0.56 V; after both sources were removed and the
+  circuit discharged, VIN fell below 0.5 V.
+- Scoped the forward PWM output on PB6/TIM4_CH1:
+  - Amplitude: 3.44 V.
+  - Duty cycle: 9.87% for a 10% command.
+  - Frequency: 19.90 kHz.
+  - PC7/PWM2 remained low.
+- Scoped the reverse PWM output on PC7/TIM8_CH2:
+  - Amplitude: 3.28 V.
+  - Duty cycle: 10.0% for a 10% command.
+  - Frequency: 19.90 kHz.
+  - PB6/PWM1 remained low.
+- Captured final clean PWM waveforms during repeated verification:
+  - CH2 measured 19.92 kHz and 9.72% duty for a 10% command.
+  - CH1 measured 19.95 kHz and 19.71% duty for an intentional 20% command.
+  - Both channels showed clean rising and falling edges.
+- Verified through the UART and both PWM probes that:
+  - `brake` forced both PWM channels low.
+  - `release` kept both PWM channels low while returning to READY/coast.
+  - `injectfault` immediately removed PWM and reported a software FAULT.
+  - `disable` retained the latched FAULT.
+  - `clearfault` returned the controller to DISABLED.
+- Completed the remaining multimeter checks of EN, ENB, and DIAG. Every
+  measured state matched the required truth table:
+  - DISABLED, READY, RELEASE, and FAULT: EN low, ENB high, and DIAG low.
+  - RUNNING and BRAKING: EN high, ENB low, and DIAG deasserted/high with
+    valid VIN and VCC.
+- Shut down normally from a safe state using the kill switch and supply-output
+  control.
+
+**Observations**
+
+- The earlier 0.7-3.6 V readings were taken from VIN rather than VCC while the
+  12 V source was disabled or disconnected. They were not valid measurements
+  of the TB9051 logic rail.
+- The 0.56 V VIN reading with the kill switch off and USB connected is
+  consistent with a weak, high-impedance residual or logic-side backfeed; it
+  disappeared below 0.5 V when both power sources were removed.
+- The measured 4.72 V VCC is slightly below the test plan's conservative
+  4.75 V lower target but remains inside the TB9051FTG datasheet operating
+  range of 4.5-5.5 V. Both ends of the logic-power wire measured identically.
+- Both physical PWM channels were below the carrier's 20.0 kHz maximum and
+  closely matched their commanded duty cycles.
+- An anomalous PB6 waveform seen during repeated probing was resolved by
+  correcting the measurement setup. The specific setup cause was not recorded,
+  so no hardware or firmware root cause is claimed.
+- Unloaded current remained far below the 50 mA investigation threshold,
+  including throughout the two-minute observation.
+
+**Problems / Open Gates**
+
+- Scope screenshots and a saved UART transcript/artifact location still need
+  to be added to the permanent test record.
+- The EN/ENB/DIAG checks were reported as passing expected low/high levels,
+  but exact numerical voltages were not transcribed into the test record.
+- The motor, encoder, and ACS724 current path have not been powered or
+  physically validated.
+
+**Decisions**
+
+- Retain TIM4 and TIM8 ARR `4199`; the measured 19.90 kHz PWM does not exceed
+  the carrier's 20.0 kHz maximum, so the fallback ARR `4299` change is not
+  required.
+- Accept 4.72 V as electrically within the TB9051FTG VCC operating range while
+  recording it as a deviation from the project's tighter nominal target.
+- Mark DRIVER-POWER-001 as **PASS**. The permanent artifact paths and exact
+  EN/ENB/DIAG voltage values remain documentation limitations, but the required
+  electrical behavior and safety checks passed.
+- Authorize preparation and review of MOTOR-SPIN-001. Keep the motor physically
+  disconnected until that procedure and the secure-restraint gate are reviewed.
+
+**Next Step**
+
+Prepare and review the gated MOTOR-SPIN-001 procedure, including the secure
+motor restraint, 0.5 A supply limit, lowest-duty forward/reverse sequence, and
+software-fault shutdown test. Keep the motor disconnected until that review is
+complete.
+
+---
+
+### 2026-08-19 — First Unloaded Motor Spin and Fault Shutdown
+
+**Goal**
+
+Complete MOTOR-SPIN-001 using the exact Pololu #4866 motor and #2997 carrier,
+demonstrate controlled low-duty operation in both directions, and verify that a
+software fault removes drive and remains latched.
+
+**Work Completed**
+
+- Secured the unloaded motor with the output shaft unobstructed and the kill
+  switch within reach.
+- With all power removed, connected the red motor lead to OUT1 and the black
+  motor lead to OUT2. Kept the green, blue, yellow, and white encoder leads and
+  the ACS724 current path disconnected and insulated.
+- Completed the unpowered wiring checks:
+  - OUT1-to-GND and OUT2-to-GND each measured approximately 0.8 MOhm.
+  - The motor-winding continuity check passed.
+- Set the supply to 12.0 V with a 0.5 A current limit. In DISABLED and READY,
+  the supply remained in constant-voltage mode at approximately 0.002 A and the
+  motor remained stationary.
+- Tested forward rotation:
+  - The motor did not start at 10% duty.
+  - The lowest successful command was 12% duty.
+  - Forward produced counterclockwise rotation when viewed directly at the
+    output shaft and drew approximately 0.036 A.
+- Returned to READY/coast before changing direction, then verified reverse at
+  12% duty. Reverse produced clockwise rotation at approximately 0.036 A.
+- Performed the software-fault shutdown test while running at 12% duty:
+  - `injectfault` immediately removed drive and the motor coasted to a stop.
+  - FAULT latched with duty 0.
+  - `enable` was rejected while faulted.
+  - `disable` retained FAULT.
+  - `clearfault` returned the controller to DISABLED with duty 0 and no fault.
+- Observed no current limiting, voltage collapse, heating, odor, abnormal
+  noise, restraint movement, or other unexpected behavior.
+- Finished the command sequence in DISABLED with duty 0 and no active fault.
+
+**Observations and Deviations**
+
+- A brief unplanned 50% duty command was exercised during forward testing. It
+  drew approximately 0.070 A without abnormal behavior, but exceeded the
+  approved procedure's 25% ceiling and is not adopted as a future test limit.
+- The highest observed supply current during MOTOR-SPIN-001 was 0.070 A. The
+  validated lowest reliable starting duty was 12% in both directions.
+- The red-to-OUT1 and black-to-OUT2 wiring defines firmware `forward` as
+  counterclockwise when viewed from the output shaft; `reverse` is clockwise.
+
+**Problems / Open Gates**
+
+- Permanent UART transcript and motor-test artifact paths have not yet been
+  added to the repository record.
+- The encoder remains physically unpowered and unvalidated. Its count polarity,
+  measured RPM, and direction convention are still open.
+- The ACS724 high-current path remains disconnected and unvalidated.
+
+**Decisions**
+
+- Mark MOTOR-SPIN-001 as **PASS** based on successful bidirectional low-duty
+  motion, safe coast behavior, bounded current, and verified fault latching and
+  clearing.
+- Preserve 12% as the recorded lowest successful unloaded starting duty for
+  this hardware configuration; do not treat the unplanned 50% command as a
+  required or approved validation point.
+- Stop further motor-power testing until this result is documented and the next
+  physical encoder-validation procedure is reviewed.
+
+**Next Step**
+
+Save the UART and motor-test evidence, checkpoint the completed bring-up
+records, then prepare the logic wiring and test sequence for physical encoder
+count, RPM, rollover, and direction-polarity validation.

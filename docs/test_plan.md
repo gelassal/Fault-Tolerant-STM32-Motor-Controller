@@ -144,7 +144,7 @@ continuity measurements remain pending.
 
 ## DRIVER-POWER-001 - Powered Carrier Without Motor
 
-Status: **PENDING OSCILLOSCOPE AND UNPOWERED PREPARATION**
+Status: **PASS - COMPLETED 2026-08-18**
 
 Use fused, current-limited 12 V power with OUT1/OUT2 disconnected. Validate all
 controller states, DIAG, PWM routing, and temperature before connecting a motor.
@@ -224,11 +224,42 @@ unloaded current reaches or exceeds 0.05 A, stop and investigate before
 continuing. Do not connect the motor after this test; review and document the
 complete DRIVER-POWER-001 record first.
 
+Recorded result, 2026-08-18: **PASS.** The carrier remained stable at 12.0 V
+with a 0.25 A current limit and approximately 0.002 A maximum unloaded current.
+Forward/reverse PWM, coast, brake, DIAG, fault shutdown, clear, kill-switch,
+and two-minute observation checks passed. Measured PWM was 19.90-19.95 kHz.
+Logic VCC measured 4.72 V, which missed the project's conservative 4.75 V
+target but remained within the TB9051FTG operating range. Permanent artifact
+paths and exact EN/ENB/DIAG voltage values remain documentation limitations.
+
 ## MOTOR-SPIN-001 - First Unloaded Motor Spin
 
-Status: **PENDING DRIVER-POWER-001**
+Status: **PASS - COMPLETED 2026-08-19**
 
 Use a 0.5 A supply limit and the staged procedure in `wiring.md`. Demonstrate
 the lowest successful forward and reverse duty, READY/coast, disable, and
 software-fault shutdown. Record maximum observed current, supply settings,
 measured PWM, UART transcript, scope captures, and pass/fail result.
+
+Recorded result, 2026-08-19: **FUNCTIONAL PASS.** The motor was securely
+restrained and connected red-to-OUT1 and black-to-OUT2 while its four encoder
+leads and the ACS724 current path remained disconnected. The supply was set to
+12.0 V with a 0.5 A limit and remained in constant-voltage mode. Idle current
+was approximately 0.002 A with no motion in DISABLED or READY.
+
+- A 10% forward command did not start the motor.
+- The lowest successful forward command was 12%, producing counterclockwise
+  output-shaft rotation and approximately 0.036 A supply current.
+- Reverse operation at 12% produced clockwise rotation and approximately the
+  same 0.036 A current.
+- An unplanned brief 50% command produced 0.070 A, the maximum observed current,
+  without current limiting or abnormal behavior. This exceeded the procedure's
+  planned 25% ceiling and is recorded as a test deviation, not a new limit.
+- At 12% duty, `injectfault` immediately removed drive and latched FAULT;
+  `enable` was rejected, `disable` retained FAULT, and `clearfault` returned the
+  controller to DISABLED with duty 0 and no fault.
+- No voltage collapse, heating, odor, abnormal noise, restraint movement, or
+  other unexpected behavior occurred.
+
+Permanent UART transcript and motor-test artifact paths remain to be added to
+the repository record.
