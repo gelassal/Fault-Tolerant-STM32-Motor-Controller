@@ -31,3 +31,23 @@ clearfault   -> DISABLED
 
 Every response is parsed from the controller's actual state report. On a test
 failure, the script attempts a final `disable` command before closing the port.
+
+## Read-Only Encoder Check
+
+The encoder-only mode never sends enable, duty, direction, brake, release, or
+fault commands:
+
+```powershell
+python tools\hil\uart_smoke_test.py --port COM5 --encoder-only
+```
+
+It requires the controller to already report `state=disabled duty=0`, then
+parses the machine-readable response:
+
+```text
+ENCODER initialized=1 count=-1234 delta=-12 rpm_milli=-200 direction=reverse
+```
+
+With PB4/PB5 physically disconnected, the timer inputs can float, so this mode
+validates integration and response formatting but must not be used to claim
+stationary-count stability. Physical encoder wiring is required for that test.

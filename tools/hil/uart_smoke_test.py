@@ -23,6 +23,14 @@ STATE_PATTERN = re.compile(
     re.MULTILINE,
 )
 
+ENCODER_PATTERN = re.compile(
+    r"^ENCODER initialized=(?P<initialized>[01]) "
+    r"count=(?P<count>-?\d+) delta=(?P<delta>-?\d+) "
+    r"rpm_milli=(?P<rpm_milli>-?\d+) "
+    r"direction=(?P<direction>[a-z_]+)\r?$",
+    re.MULTILINE,
+)
+
 
 @dataclass(frozen=True)
 class ExpectedState:
@@ -94,6 +102,17 @@ def parse_state(response: str) -> dict[str, str]:
     return matches[-1].groupdict()
 
 
+def parse_encoder(response: str) -> dict[str, str]:
+    matches = list(ENCODER_PATTERN.finditer(response))
+
+    if not matches:
+        raise AssertionError(
+            f"no encoder telemetry found in response:\n{response}"
+        )
+
+    return matches[-1].groupdict()
+
+
 def run_test(console: Console) -> None:
     console.synchronize()
 
@@ -121,6 +140,33 @@ def run_test(console: Console) -> None:
                 )
 
 
+def run_encoder_read_only(console: Console) -> None:
+    console.synchronize()
+
+    status_response = console.command("status")
+    print(f"\n$ status\n{status_response.rstrip()}")
+    state = parse_state(status_response)
+
+    if (state["state"] != "disabled" or state["duty"] != "0"):
+        raise AssertionError(
+            "encoder-only mode requires state=disabled and duty=0; "
+            f"received state={state['state']} duty={state['duty']}"
+        )
+
+    encoder_response = console.command("encoder")
+    print(f"\n$ encoder\n{encoder_response.rstrip()}")
+
+    if "ERR " in encoder_response:
+        raise AssertionError(
+            f"'encoder' returned an error:\n{encoder_response}"
+        )
+
+    telemetry = parse_encoder(encoder_response)
+
+    if telemetry["initialized"] != "1":
+        raise AssertionError("encoder telemetry reports initialized=0")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run the STM32 UART motor safety-state smoke test."
@@ -133,7 +179,23 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Required acknowledgement that OUT1/OUT2 and the motor are disconnected.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--encoder-only",
+        action="store_true",
+        help="Read status and encoder telemetry without sending motor commands.",
+    )
+
+    args = parser.parse_args()
+
+    if args.motor_disconnected and args.encoder_only:
+        parser.error("choose either --motor-disconnected or --encoder-only")
+
+    if not args.motor_disconnected and not args.encoder_only:
+        parser.error(
+            "one safety mode is required: --motor-disconnected or --encoder-only"
+        )
+
+    return args
 
 
 def main() -> int:
@@ -147,24 +209,22 @@ def main() -> int:
         )
         return 2
 
-    if not args.motor_disconnected:
-        print(
-            "Refusing to enable outputs without --motor-disconnected. "
-            "Disconnect OUT1, OUT2, and the motor first.",
-            file=sys.stderr,
-        )
-        return 2
-
     console = Console(args.port, args.baud, args.timeout)
     passed = False
 
     try:
-        run_test(console)
+        if args.encoder_only:
+            run_encoder_read_only(console)
+            pass_message = "PASS: read-only encoder telemetry check completed."
+        else:
+            run_test(console)
+            pass_message = "PASS: UART safety-state smoke test completed."
+
         passed = True
-        print("\nPASS: UART safety-state smoke test completed.")
+        print(f"\n{pass_message}")
         return 0
     finally:
-        if not passed:
+        if not passed and not args.encoder_only:
             try:
                 response = console.command("disable")
                 print(f"\nSafety cleanup response:\n{response.rstrip()}")

@@ -1,8 +1,12 @@
 #include "command_console.h"
 
+#include "encoder_driver.h"
 #include "motor_controller.h"
 
 #include <ctype.h>
+#include <inttypes.h>
+#include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -174,6 +178,51 @@ static const char *ControllerFaultToString(
 }
 
 
+static const char *EncoderDirectionToString(
+    EncoderDirection_t direction)
+{
+    switch (direction)
+    {
+        case ENCODER_DIRECTION_STATIONARY:
+            return "stationary";
+
+        case ENCODER_DIRECTION_FORWARD:
+            return "forward";
+
+        case ENCODER_DIRECTION_REVERSE:
+            return "reverse";
+
+        default:
+            return "unknown";
+    }
+}
+
+
+static int32_t EncoderRPMToMilli(float rpm)
+{
+    if (!isfinite(rpm))
+    {
+        return 0;
+    }
+
+    float scaled_rpm = rpm * 1000.0f;
+
+    if (scaled_rpm >= (float)INT32_MAX)
+    {
+        return INT32_MAX;
+    }
+
+    if (scaled_rpm <= (float)INT32_MIN)
+    {
+        return INT32_MIN;
+    }
+
+    scaled_rpm += scaled_rpm >= 0.0f ? 0.5f : -0.5f;
+
+    return (int32_t)scaled_rpm;
+}
+
+
 static void SendMotorStatus(const char *prefix)
 {
     char response[160];
@@ -206,6 +255,37 @@ static void SendMotorStatus(const char *prefix)
         direction_text,
         duty_percent,
         fault_text
+    );
+
+    ConsoleWrite(response);
+}
+
+
+static void SendEncoderStatus(void)
+{
+    char response[192];
+
+    int64_t count = Encoder_GetCount();
+    int32_t delta = Encoder_GetDelta();
+    int32_t rpm_milli = EncoderRPMToMilli(
+        Encoder_GetRPM()
+    );
+    const char *direction_text =
+        EncoderDirectionToString(
+            Encoder_GetDirection()
+        );
+
+    (void)snprintf(
+        response,
+        sizeof(response),
+        "ENCODER initialized=%u count=%" PRId64
+        " delta=%" PRId32 " rpm_milli=%" PRId32
+        " direction=%s\r\n",
+        Encoder_IsInitialized() ? 1U : 0U,
+        count,
+        delta,
+        rpm_milli,
+        direction_text
     );
 
     ConsoleWrite(response);
@@ -410,6 +490,10 @@ static void HandleCommand(char *command)
     {
         SendMotorStatus("STATUS");
     }
+    else if (strcmp(normalized_command, "encoder") == 0)
+    {
+        SendEncoderStatus();
+    }
     else if (strcmp(normalized_command, "help") == 0)
     {
         ConsoleWrite(
@@ -422,6 +506,7 @@ static void HandleCommand(char *command)
             "  brake\r\n"
             "  release\r\n"
             "  status\r\n"
+            "  encoder\r\n"
             "  injectfault\r\n"
             "  clearfault\r\n"
             "  help\r\n"

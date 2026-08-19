@@ -217,3 +217,85 @@ Recorded result: **PASS on 2026-08-19.** The lowest reliable unloaded starting
 duty was 12% in both directions at approximately 0.036 A. Software-fault
 injection immediately removed drive, latched FAULT, rejected re-enable, and
 cleared explicitly back to DISABLED.
+
+## Stage 5: Physical Encoder Validation — Pending Home Bench
+
+### Unpowered Wiring
+
+1. Enter `duty 0`, `disable`, and `status`; require DISABLED, duty 0, and no
+   fault.
+2. Turn the kill switch off, turn the supply output off, disconnect Nucleo USB,
+   and require VIN below 0.5 V before changing wiring.
+3. Keep the red/black motor leads on OUT1/OUT2 and keep the ACS724 current path
+   disconnected.
+4. Connect the encoder leads:
+
+```text
+Green  -> system GND
+Blue   -> Nucleo +5V
+Yellow -> PB4 / TIM3_CH1
+White  -> PB5 / TIM3_CH2
+```
+
+The encoder requires 3.5-20 V, so do not power blue from 3.3 V. PB4 and PB5 are
+5 V-tolerant inputs on the STM32F446RE. Inspect every termination, verify common
+ground, and confirm that no encoder conductor can contact the rotating shaft.
+
+### USB Logic-Only Gate
+
+1. Keep 12 V and the kill switch off, connect Nucleo USB, reset, and require
+   `state=disabled duty=0 fault=none`.
+2. Measure encoder blue-to-green voltage; require 4.5-5.25 V.
+3. Run `encoder` repeatedly while stationary. Require `initialized=1`, stable
+   count, `delta=0`, `rpm_milli=0`, and `direction=stationary`.
+4. Scope yellow and white only relative to system GND. Confirm valid stationary
+   logic levels before applying motor power.
+
+### Powered Direction and RPM Test
+
+1. Reconfirm the restraint and cutoff, then set the supply to 12.0 V with a
+   0.5 A current limit and apply VIN.
+2. Require constant-voltage mode, approximately 0.002 A idle current, and no
+   motion in DISABLED.
+3. Run:
+
+```text
+status
+encoder
+enable
+duty 12
+encoder
+duty 0
+encoder
+reverse
+duty 12
+encoder
+duty 0
+encoder
+disable
+```
+
+4. Require nonzero RPM and changing counts while running, opposite count signs
+   in forward and reverse, and stationary telemetry after coast. If 12% is not
+   steady enough, use 15%, 20%, then at most 25%; do not repeat the earlier 50%
+   deviation.
+5. If telemetry direction is opposite the motor command, set
+   `invert_direction=true` in the encoder configuration, rebuild, flash, and
+   repeat without swapping the standardized A/B wiring.
+6. Scope both encoder channels while running. Require clean, similar-frequency
+   square waves with approximately 90-degree phase separation.
+7. Compare reported output-shaft RPM with:
+
+```text
+output_rpm = encoder_A_frequency_hz * 60 / (12 * 74.83)
+```
+
+Use steady-speed measurements and require agreement within 10%.
+8. At 12% duty, inject a software fault and require immediate coast, latched
+   FAULT, and encoder RPM returning to zero; clear explicitly to DISABLED.
+
+Abort for current limiting, rising current without rotation, voltage collapse,
+heat, odor, abnormal noise, restraint movement, invalid encoder voltage, missing
+counts while rotating, or unexpected waveforms. Save the UART transcript, A/B
+scope capture, wiring photo, frequency/RPM comparison, supply settings, maximum
+current, and final pass/fail result.

@@ -27,6 +27,8 @@ Completed in firmware:
 - Nonblocking 10 ms encoder sampling, continuous count, RPM, and direction
 - HAL-free encoder-math regression suite using the exact 3,591.84 output-shaft
   counts per revolution of Pololu #4866
+- Read-only `encoder` UART telemetry with signed count, delta, fixed-point RPM,
+  and encoder direction
 - Python UART HIL smoke-test skeleton for repeatable safety-state validation
 
 Verified through 2026-08-19:
@@ -34,10 +36,12 @@ Verified through 2026-08-19:
 - All 147 native motor-controller assertions passed with `-Wall -Wextra
   -Werror -pedantic`.
 - All 57 native encoder assertions passed with the same strict warnings.
+- All 4 Python UART parser/read-only-mode tests passed.
 - Physical Nucleo UART safety-state behavior and the carrier's VIN-absent DIAG
   fault path were validated.
 - A complete STM32 Debug rebuild compiled and linked with zero warnings.
-- Image size: 28,388 bytes text, 100 bytes initialized data, and 2,384 bytes BSS.
+- Encoder-telemetry firmware image size: 29,100 bytes text, 100 bytes
+  initialized data, and 2,384 bytes BSS.
 - DRIVER-POWER-001 passed at 12.0 V with a 0.25 A current limit, approximately
   0.002 A unloaded current, and measured 19.90-19.95 kHz PWM.
 - MOTOR-SPIN-001 passed at a lowest reliable 12% starting duty in both
@@ -96,6 +100,15 @@ The controller tests use a fake motor driver to verify state policy and fault
 handling. The encoder tests feed synthetic counter values into production math
 to verify signed motion, zero speed, rollover, high count rates, accumulated
 position, direction inversion, and RPM conversion.
+
+Run the Python UART parsing and read-only-mode tests:
+
+```powershell
+python tools\hil\test_uart_smoke_test.py
+```
+
+After flashing, query encoder telemetry manually with `encoder` or run the
+read-only integration check described in `tools/hil/README.md`.
 
 ## Long-Term Target
 

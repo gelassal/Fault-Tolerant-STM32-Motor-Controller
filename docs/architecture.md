@@ -11,7 +11,8 @@ flowchart LR
     Bridge --> Motor["12 V DC gearmotor"]
     Bridge -->|"DIAG"| Driver
     Motor -->|"quadrature A/B"| Encoder["TIM3 + encoder_driver"]
-    Encoder -->|"count, RPM, direction"| Main["synchronous main loop"]
+    Encoder -->|"sample processing"| Main["synchronous main loop"]
+    Encoder -->|"count, delta, RPM, direction"| Console
     Controller -->|"state and fault telemetry"| Console
     Console -->|"UART responses"| Host
 ```
@@ -23,7 +24,8 @@ The modules have deliberately narrow responsibilities:
 - `motor_controller` owns legal transitions, coast/brake policy, direction
   interlocks, fault latching, and safe shutdown.
 - `command_console` owns interrupt-driven UART buffering, parsing, validation,
-  and response formatting. It does not call the low-level driver.
+  motor-state formatting, and read-only encoder telemetry. It does not call the
+  low-level motor driver.
 - `encoder_driver` owns TIM3 sampling and exposes continuous count, count delta,
   RPM, and direction. `encoder_math` contains the HAL-free rollover and unit
   conversion logic used by native tests.

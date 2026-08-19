@@ -263,3 +263,30 @@ was approximately 0.002 A with no motion in DISABLED or READY.
 
 Permanent UART transcript and motor-test artifact paths remain to be added to
 the repository record.
+
+## ENCODER-HW-001 - Physical Encoder Direction and RPM
+
+Status: **PENDING HOME HARDWARE VALIDATION**
+
+Use the Stage 5 procedure in `wiring.md` with encoder blue powered from Nucleo
++5V, green at system ground, yellow on PB4/TIM3_CH1, and white on PB5/TIM3_CH2.
+Keep the ACS724 path disconnected and retain the 12.0 V, 0.5 A motor-supply
+limit.
+
+Required results:
+
+| Check | PASS | FAIL / immediate stop |
+|---|---|---|
+| Stationary telemetry | Initialized, stable count, delta 0, RPM 0, stationary | Count drift, nonzero RPM, or uninitialized |
+| Encoder supply | 4.5-5.25 V blue-to-green | Outside range or incorrect polarity |
+| Forward at lowest steady duty | Changing count, nonzero RPM, forward direction | Missing counts, wrong direction after calibration, or unstable signal |
+| Reverse at same duty | Opposite count sign, nonzero RPM, reverse direction | Same sign as forward or missing counts |
+| A/B waveforms | Clean quadrature, similar frequency, approximately 90-degree phase | Invalid levels, noise preventing reliable count, or missing channel |
+| RPM cross-check | UART RPM within 10% of scope-derived RPM | Difference greater than 10% at steady speed |
+| Coast/fault | RPM returns to zero; fault removes drive and latches | Continued drive or persistent nonzero speed after stop |
+
+Use 12% first, then 15%, 20%, and at most 25% only if needed for steady
+measurement. If physical polarity is inverted, set the existing encoder
+configuration's `invert_direction` flag, rebuild, and repeat. Do not swap the
+standardized yellow/white channel wiring. Save the UART transcript, wiring
+photo, A/B scope capture, frequency calculation, maximum current, and result.

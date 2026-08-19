@@ -854,3 +854,69 @@ software fault removes drive and remains latched.
 Save the UART and motor-test evidence, checkpoint the completed bring-up
 records, then prepare the logic wiring and test sequence for physical encoder
 count, RPM, rollover, and direction-polarity validation.
+
+---
+
+### 2026-08-19 — Encoder Telemetry and Physical-Test Preparation
+
+**Goal**
+
+Expose the existing encoder measurements through a stable read-only UART
+interface, automate its integration check, and define the gated home-bench
+procedure for physical direction and RPM validation.
+
+**Work Completed**
+
+- Added the read-only `encoder` console command without changing the existing
+  motor `status` response format.
+- Defined machine-readable telemetry containing initialization state, signed
+  accumulated count, signed sample delta, signed millirpm, and encoder
+  direction:
+
+  `ENCODER initialized=1 count=-1234 delta=-12 rpm_milli=-200 direction=reverse`
+
+- Used fixed-point millirpm in the UART response so the embedded build does not
+  require floating-point `printf` support.
+- Added `encoder` to console help.
+- Extended the Python UART smoke-test tool with `--encoder-only`. This mode
+  requires DISABLED with duty 0, queries status and encoder telemetry, and never
+  sends enable, duty, direction, brake, release, or fault commands.
+- Added Python unit tests for signed telemetry parsing, malformed responses,
+  the read-only command sequence, and rejection of an active motor state.
+- Added ENCODER-HW-001 and Stage 5 documentation covering the exact lead map,
+  USB-only gate, direction calibration, quadrature scope check, RPM comparison,
+  fault stop, acceptance criteria, and abort conditions.
+
+**Verification**
+
+- All 147 native motor-controller assertions passed.
+- All 57 native encoder-math assertions passed.
+- All 4 Python UART parser/read-only-mode tests passed.
+- The STM32 Debug firmware compiled and linked without warnings.
+- Firmware image size after encoder telemetry: 29,100 bytes text, 100 bytes
+  initialized data, and 2,384 bytes BSS.
+
+**Problems / Open Gates**
+
+- The new firmware has not yet been flashed to the Nucleo or exercised over the
+  physical UART.
+- The green/blue/yellow/white encoder leads remain physically unvalidated.
+- Stationary count stability, signal levels, quadrature phase, direction
+  polarity, measured RPM, and scope-to-firmware agreement remain pending the
+  home bench.
+
+**Decisions**
+
+- Preserve the motor `status` wire format so the existing HIL parser remains
+  compatible; expose encoder data through a separate command.
+- Standardize physical wiring as green-to-ground, blue-to-+5V, yellow-to-PB4,
+  and white-to-PB5. Correct an inverted sign with the existing
+  `invert_direction` configuration rather than swapping A/B wiring.
+- Limit the encoder test to 12%, then 15%, 20%, and at most 25% duty as needed
+  for a steady measurement. Do not repeat the earlier 50% deviation.
+
+**Next Step**
+
+Flash the verified firmware, complete the USB-only encoder gate, then execute
+ENCODER-HW-001 at home with the fused 12 V supply, 0.5 A current limit, secure
+restraint, cutoff, and oscilloscope.
