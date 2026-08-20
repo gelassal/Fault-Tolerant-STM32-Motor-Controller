@@ -920,3 +920,75 @@ procedure for physical direction and RPM validation.
 Flash the verified firmware, complete the USB-only encoder gate, then execute
 ENCODER-HW-001 at home with the fused 12 V supply, 0.5 A current limit, secure
 restraint, cutoff, and oscilloscope.
+
+---
+
+### 2026-08-20 — USB-Only Encoder Telemetry Validation and Nano-Printf Fix
+
+**Goal**
+
+Flash and exercise the encoder telemetry over the physical Nucleo UART while
+away from the powered motor bench, then correct any integration defect before
+the physical encoder is connected.
+
+**Work Completed**
+
+- Flashed the encoder-telemetry firmware to the Nucleo and confirmed the
+  existing motor `status` command still reported DISABLED, forward, duty 0,
+  and no fault.
+- Confirmed `encoder` appeared in physical UART help and was recognized by the
+  command parser.
+- The first physical UART query exposed malformed telemetry:
+
+  `ENCODER initialized=1 count=ld delta=-1 rpm_milli=-1 direction=0`
+
+- Traced the corruption to the firmware's Newlib Nano `snprintf`
+  implementation. Under the current `--specs=nano.specs` link configuration,
+  the 64-bit `%lld` conversion was not consumed correctly; subsequent
+  variadic arguments were therefore interpreted in the wrong positions.
+- Added a bounded, embedded-safe signed 64-bit decimal conversion for the
+  accumulated encoder count. The final `snprintf` now receives the count as a
+  string while retaining the existing signed 32-bit delta and millirpm fields.
+- Rebuilt, reflashed, and repeatedly queried the Nucleo. Every query returned
+  the correctly structured and stable response:
+
+  `ENCODER initialized=1 count=-1 delta=0 rpm_milli=0 direction=stationary`
+
+**Verification**
+
+- All 147 native motor-controller assertions passed.
+- All 57 native encoder-math assertions passed.
+- All 4 Python UART parser/read-only-mode tests passed.
+- The STM32 Debug firmware compiled and linked without warnings.
+- Firmware image size after the formatting fix: 29,380 bytes text, 100 bytes
+  initialized data, and 2,384 bytes BSS.
+- Physical USB/UART validation confirmed correct encoder field names, signed
+  count formatting, zero delta, zero millirpm, and the `stationary` direction
+  string over repeated queries.
+
+**Problems / Open Gates**
+
+- The encoder was physically disconnected during this café-safe USB-only
+  check. PB4/PB5 were therefore not driven by real encoder signals.
+- The stable accumulated count of -1 records one earlier transition while the
+  disconnected inputs were floating; the zero delta and RPM show that no new
+  transitions occurred during the repeated queries.
+- This check does not validate encoder supply voltage, stationary stability
+  with driven inputs, quadrature phase, physical direction polarity, or RPM
+  accuracy. ENCODER-HW-001 remains pending.
+
+**Decisions**
+
+- Retain Newlib Nano and avoid enabling a larger general-purpose formatted-I/O
+  implementation solely for one signed 64-bit field.
+- Treat the repeated physical UART result as a PASS for command integration
+  and wire-format validation only, not as a physical encoder measurement.
+- Keep the 12 V motor supply disconnected until returning to the protected
+  home bench.
+
+**Next Step**
+
+At home with all power initially off, connect encoder green to system ground,
+blue to Nucleo +5 V, yellow to PB4/TIM3_CH1, and white to PB5/TIM3_CH2. Complete
+the USB logic-only gate before applying 12 V, then execute ENCODER-HW-001 for
+physical direction, quadrature waveform, and RPM validation.

@@ -223,6 +223,57 @@ static int32_t EncoderRPMToMilli(float rpm)
 }
 
 
+static void FormatSignedInt64(
+    int64_t value,
+    char *buffer,
+    size_t buffer_size
+)
+{
+    char reversed_digits[20];
+    size_t digit_count = 0U;
+    size_t output_index = 0U;
+    bool is_negative = value < 0;
+    uint64_t magnitude = is_negative
+        ? (uint64_t)(-(value + 1)) + 1U
+        : (uint64_t)value;
+
+    if ((buffer == NULL) || (buffer_size == 0U))
+    {
+        return;
+    }
+
+    do
+    {
+        reversed_digits[digit_count] =
+            (char)('0' + (magnitude % 10U));
+        digit_count++;
+        magnitude /= 10U;
+    }
+    while (magnitude != 0U);
+
+    if (digit_count + (is_negative ? 1U : 0U) >= buffer_size)
+    {
+        buffer[0] = '\0';
+        return;
+    }
+
+    if (is_negative)
+    {
+        buffer[output_index] = '-';
+        output_index++;
+    }
+
+    while (digit_count > 0U)
+    {
+        digit_count--;
+        buffer[output_index] = reversed_digits[digit_count];
+        output_index++;
+    }
+
+    buffer[output_index] = '\0';
+}
+
+
 static void SendMotorStatus(const char *prefix)
 {
     char response[160];
@@ -264,6 +315,7 @@ static void SendMotorStatus(const char *prefix)
 static void SendEncoderStatus(void)
 {
     char response[192];
+    char count_text[22];
 
     int64_t count = Encoder_GetCount();
     int32_t delta = Encoder_GetDelta();
@@ -275,14 +327,16 @@ static void SendEncoderStatus(void)
             Encoder_GetDirection()
         );
 
+    FormatSignedInt64(count, count_text, sizeof(count_text));
+
     (void)snprintf(
         response,
         sizeof(response),
-        "ENCODER initialized=%u count=%" PRId64
+        "ENCODER initialized=%u count=%s"
         " delta=%" PRId32 " rpm_milli=%" PRId32
         " direction=%s\r\n",
         Encoder_IsInitialized() ? 1U : 0U,
-        count,
+        count_text,
         delta,
         rpm_milli,
         direction_text
